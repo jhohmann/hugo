@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]openai
+psycopg[binary]
+pgvector==0.5.1
+sentence-transformers==6.2.0
