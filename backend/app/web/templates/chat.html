@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Chat – Hugo{% endblock %}
+{% block content %}
+<div class="chat-layout">
+  <aside class="chat-sidebar">
+    <details class="conversation-panel" open>
+      <summary>
+        Unterhaltungen
+        <a class="button button-small" href="/ui/chat" title="Neue Unterhaltung beginnen">Neu</a>
+      </summary>
+      <ul class="conversation-list">
+        {% for c in conversations %}
+        <li>
+          <a href="/ui/chat/{{ c.id }}"{% if c.id == conversation_id %} class="active"{% endif %}>
+            <span class="conversation-preview">{{ c.preview or "Unterhaltung " ~ c.id }}</span>
+            <span class="conversation-meta">{{ c.last_activity|de_datetime if c.last_activity else c.created_at|de_datetime }}</span>
+          </a>
+        </li>
+        {% else %}
+        <li class="empty">Noch keine Unterhaltungen.</li>
+        {% endfor %}
+      </ul>
+    </details>
+  </aside>
+
+  <section class="chat-main">
+    {% if error %}
+    <p class="alert" role="alert">{{ error }}</p>
+    {% endif %}
+
+    <div class="message-list" id="messages" aria-live="polite">
+      {% for m in messages %}
+      <div class="message {{ m.role }}">
+        <div class="message-bubble">{{ m.content }}</div>
+      </div>
+      {% else %}
+      <p class="empty-state">Neue Unterhaltung mit Hugo beginnen.</p>
+      {% endfor %}
+    </div>
+
+    <form class="chat-form" method="post" action="/ui/chat" data-loading-text="Hugo denkt nach …">
+      {% if conversation_id %}
+      <input type="hidden" name="conversation_id" value="{{ conversation_id }}">
+      {% endif %}
+      <label class="visually-hidden" for="chat-message">Nachricht an Hugo</label>
+      <textarea id="chat-message" name="message" rows="2" required
+        placeholder="Nachricht an Hugo …" autofocus>{{ draft }}</textarea>
+      <button type="submit" class="button button-primary">Senden</button>
+    </form>
+    <p class="loading-indicator" hidden>Hugo denkt nach …</p>
+  </section>
+</div>
+{% endblock %}

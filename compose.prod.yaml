@@ -1,0 +1,157 @@
+# docker-compose.prod.yaml
+# Produktionskonfiguration für Hugo auf Proxmox
+#
+# Services:
+# - db: PostgreSQL 17 mit pgvector (isoliert, kein öffentlicher Port)
+# - web: FastAPI Web-Server (HTTP API + Web-UI)
+# - worker: Background-Worker (tägliche proaktive Auswertung)
+#
+# Start: docker compose -f compose.prod.yaml --env-file .env.prod up -d
+# Stop:  docker compose -f compose.prod.yaml down
+# Logs:  docker compose -f compose.prod.yaml logs -f web
+
+services:
+  # PostgreSQL 17 mit pgvector Extension
+  # Isoliert im internen Netzwerk (kein direkter Zugriff von außen)
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: hugo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-hugo}
+      POSTGRES_USER: ${DB_USER:-hugo}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    
+    # Named Volume für Persistierung (regelmäßig backen!)
+    volumes:
+      - hugo_postgres_data:/var/lib/postgresql/data
+      
+      # Migrationen werden vom init-Container vor App-Start ausgeführt
+      # (siehe web service, depends_on)
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./backend/migrations/002_embeddings.sql:/docker-entrypoint-initdb.d/02-embeddings.sql:ro
+      - ./backend/migrations/003_thread_embeddings.sql:/docker-entrypoint-initdb.d/03-thread-embeddings.sql:ro
+      - ./backend/migrations/004_temporal.sql:/docker-entrypoint-initdb.d/04-temporal.sql:ro
+      - ./backend/migrations/005_proactivity.sql:/docker-entrypoint-initdb.d/05-proactivity.sql:ro
+      - ./backend/migrations/006_calendar.sql:/docker-entrypoint-initdb.d/06-calendar.sql:ro
+    
+    # Nur im internen Netzwerk (kein localhost-Binding)
+    networks:
+      - hugo_internal
+    
+    # Health-Check: pg_isready
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-hugo} -d ${DB_NAME:-hugo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # FastAPI Web-Server
+  # HTTP API + Web-UI, lauscht auf Port 8000
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    container_name: hugo-web
+    restart: unless-stopped
+    
+    # Abhängigkeit: Warte auf DB
+    depends_on:
+      db:
+        condition: service_healthy
+    
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-hugo}:${DB_PASSWORD}@db:5432/${DB_NAME:-hugo}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    
+    # Ports
+    ports:
+      - "${WEB_PORT:-127.0.0.1:8000}:8000"
+    
+    networks:
+      - hugo_internal
+      - hugo_external
+    
+    # Health-Check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # Background-Worker
+  # Führt täglich um 06:00 UTC die proaktive Auswertung durch
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    container_name: hugo-worker
+    restart: unless-stopped
+    
+    # Abhängigkeit: Warte auf DB
+    depends_on:
+      db:
+        condition: service_healthy
+    
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-hugo}:${DB_PASSWORD}@db:5432/${DB_NAME:-hugo}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SCHEDULER_HOUR: ${SCHEDULER_HOUR:-6}
+      SCHEDULER_MINUTE: ${SCHEDULER_MINUTE:-0}
+    
+    # Isoliert im internen Netzwerk (kein Port nach außen)
+    networks:
+      - hugo_internal
+    
+    # Worker-Prozess starten (überschreibe CMD)
+    command: ["python", "-m", "app.worker"]
+    
+    # Kein Health-Check für Worker (läuft permanent)
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "30m"
+        max-file: "3"
+
+# Netzwerke
+networks:
+  hugo_internal:
+    # Internes Netzwerk für DB ↔ Web/Worker (keine Exposition nach außen)
+    driver: bridge
+    internal: true
+  
+  hugo_external:
+    # Externes Netzwerk für Web-Server (kann gehostet sein)
+    driver: bridge
+
+# Volumes
+volumes:
+  # PostgreSQL Daten: REGELMÄSSIG SICHERN!
+  # Backup-Beispiel:
+  # docker run --rm -v hugo_postgres_data:/data -v $(pwd):/backup \
+  #   pgvector/pgvector:pg17 \
+  #   pg_dump -U hugo -d hugo > /backup/hugo_backup_$(date +%s).sql
+  hugo_postgres_data:
+    driver: local

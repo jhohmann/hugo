@@ -1,0 +1,28 @@
+<article class="card thread-row">
+  <div class="thread-row-main">
+    <a class="thread-title" href="/ui/threads/{{ t.id }}">{{ t.title }}</a>
+    {% if t.next_action %}
+    <p class="next-action">Nächster Schritt: {{ t.next_action }}</p>
+    {% endif %}
+  </div>
+  <div class="thread-row-meta">
+    <span class="status status-{{ t.status }}">{{ fmt.thread_status_label(t.status) }}</span>
+    {% if t.priority %}
+    <span class="priority prio-{{ t.priority }}" title="Priorität {{ t.priority }} von 5">P{{ t.priority }}</span>
+    {% endif %}
+    {% set event_text = fmt.event_range_text(t) %}
+    {% if event_text %}
+    <span class="date-hint {{ fmt.urgency_class(t.event_start) }}" title="Ereigniszeitraum">{{ event_text }}</span>
+    {% endif %}
+    {% if t.act_by %}
+    <span class="date-hint {{ fmt.urgency_class(t.act_by) }}" title="Hugos Handlungsempfehlung">
+      handeln bis {{ t.act_by|de_date }} ({{ fmt.relative_label(t.act_by) }})
+    </span>
+    {% endif %}
+    {% if t.deadline %}
+    <span class="date-hint {{ fmt.urgency_class(t.deadline) }}" title="Feste Deadline">
+      Deadline {{ t.deadline|de_date }} ({{ fmt.relative_label(t.deadline) }})
+    </span>
+    {% endif %}
+  </div>
+</article>

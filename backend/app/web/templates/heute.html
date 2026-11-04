@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Heute – Hugo{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Heute</h1>
+    <p class="page-subtitle">{{ today_weekday }}, {{ today|de_date }}</p>
+  </div>
+  <form method="post" action="/ui/evaluate" data-loading-text="Auswertung läuft …">
+    <button type="submit" class="button">Jetzt auswerten</button>
+    {% if last_run %}
+    <span class="muted">
+      Letzte Auswertung: {{ last_run.finished_at|de_datetime if last_run.finished_at else "läuft" }}
+      {% if last_run.status == "failed" %}(fehlgeschlagen){% endif %}
+    </span>
+    {% endif %}
+  </form>
+</div>
+
+<section aria-label="Offene Vorschläge">
+  {% for s in open_suggestions %}
+  <article class="card suggestion{% if s.priority and s.priority >= 4 %} important{% endif %}">
+    <header class="suggestion-head">
+      {% if s.priority %}
+      <span class="priority prio-{{ s.priority }}" title="Priorität {{ s.priority }} von 5">P{{ s.priority }}</span>
+      {% endif %}
+      {% if s.thread_id %}
+      <a class="thread-ref" href="/ui/threads/{{ s.thread_id }}">{{ thread_titles.get(s.thread_id) }}</a>
+      {% else %}
+      <span class="thread-ref none">Allgemein</span>
+      {% endif %}
+      {% if s.suggested_date %}
+      {% set rel = fmt.relative_label(s.suggested_date, today) %}
+      <span class="date-hint {{ fmt.urgency_class(s.suggested_date, today) }}">
+        {{ s.suggested_date|de_date }}{% if rel %} ({{ rel }}){% endif %}
+      </span>
+      {% endif %}
+    </header>
+    <p class="suggestion-content">{{ s.content }}</p>
+    {% if s.reason %}
+    <p class="suggestion-reason muted">{{ s.reason }}</p>
+    {% endif %}
+    <footer class="actions">
+      <form method="post" action="/ui/suggestions/{{ s.id }}">
+        <input type="hidden" name="action" value="confirmed">
+        <button type="submit" class="button button-primary button-small">Bestätigen</button>
+      </form>
+      <form method="post" action="/ui/suggestions/{{ s.id }}">
+        <input type="hidden" name="action" value="deferred">
+        <button type="submit" class="button button-small">Zurückstellen</button>
+      </form>
+      <form method="post" action="/ui/suggestions/{{ s.id }}" data-confirm="Diesen Vorschlag wirklich verwerfen?">
+        <input type="hidden" name="action" value="dismissed">
+        <button type="submit" class="button button-danger button-small">Verwerfen</button>
+      </form>
+    </footer>
+  </article>
+  {% else %}
+  <p class="empty-state card">Keine offenen Vorschläge. Hugo meldet sich, wenn etwas ansteht.</p>
+  {% endfor %}
+</section>
+
+{% if deferred_suggestions %}
+<details class="deferred-section">
+  <summary>Zurückgestellt ({{ deferred_suggestions|length }})</summary>
+  {% for s in deferred_suggestions %}
+  <article class="card suggestion muted-card">
+    <header class="suggestion-head">
+      {% if s.priority %}
+      <span class="priority prio-{{ s.priority }}" title="Priorität {{ s.priority }} von 5">P{{ s.priority }}</span>
+      {% endif %}
+      {% if s.thread_id %}
+      <a class="thread-ref" href="/ui/threads/{{ s.thread_id }}">{{ thread_titles.get(s.thread_id) }}</a>
+      {% endif %}
+      {% if s.suggested_date %}
+      <span class="date-hint">{{ s.suggested_date|de_date }}</span>
+      {% endif %}
+    </header>
+    <p class="suggestion-content">{{ s.content }}</p>
+    <footer class="actions">
+      <form method="post" action="/ui/suggestions/{{ s.id }}">
+        <input type="hidden" name="action" value="confirmed">
+        <button type="submit" class="button button-small">Bestätigen</button>
+      </form>
+      <form method="post" action="/ui/suggestions/{{ s.id }}" data-confirm="Diesen Vorschlag wirklich verwerfen?">
+        <input type="hidden" name="action" value="dismissed">
+        <button type="submit" class="button button-danger button-small">Verwerfen</button>
+      </form>
+    </footer>
+  </article>
+  {% endfor %}
+</details>
+{% endif %}
+{% endblock %}

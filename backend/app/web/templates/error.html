@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Fehler {{ status_code }} – Hugo{% endblock %}
+{% block content %}
+<section class="card error-page">
+  <h1>Fehler {{ status_code }}</h1>
+  <p>{{ message }}</p>
+  <p><a class="button" href="/ui/heute">Zur Übersicht</a></p>
+</section>
+{% endblock %}

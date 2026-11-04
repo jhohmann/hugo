@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Hugo{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/ui/heute">Hugo</a>
+      <nav class="main-nav" aria-label="Hauptnavigation">
+        <a href="/ui/chat"{% if nav_active == "chat" %} class="active" aria-current="page"{% endif %}>Chat</a>
+        <a href="/ui/heute"{% if nav_active == "heute" %} class="active" aria-current="page"{% endif %}>
+          Heute{% if nav_open_suggestions %}<span class="badge" title="Offene Vorschläge">{{ nav_open_suggestions }}</span>{% endif %}
+        </a>
+        <a href="/ui/threads"{% if nav_active == "threads" %} class="active" aria-current="page"{% endif %}>Vorhaben</a>
+        <a href="/ui/kalender"{% if nav_active == "kalender" %} class="active" aria-current="page"{% endif %}>
+          Kalender{% if nav_pending_calendar_actions %}<span class="badge" title="Ausstehende Kalenderaktionen">{{ nav_pending_calendar_actions }}</span>{% endif %}
+        </a>
+      </nav>
+    </div>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

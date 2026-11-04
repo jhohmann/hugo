@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Kalender – Hugo{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Kalender</h1>
+</div>
+
+{% if flash %}
+<p class="alert{% if not flash_is_error %} alert-ok{% endif %}" role="status">{{ flash }}</p>
+{% endif %}
+
+<section class="card" aria-label="Google-Verbindung">
+  <h2>Google-Verbindung</h2>
+  {% if not configured %}
+  <p>
+    Google-OAuth ist nicht konfiguriert. Setze
+    <code>GOOGLE_CLIENT_ID</code> und <code>GOOGLE_CLIENT_SECRET</code>
+    als Umgebungsvariablen und starte den Server neu.
+  </p>
+  {% elif not connected %}
+  <p>Kein Google-Konto verbunden.</p>
+  <p>
+    <a class="button button-primary" href="/ui/kalender/auth/start">
+      Google-Konto verbinden
+    </a>
+  </p>
+  {% else %}
+  {% if connection_error %}
+  <p class="alert" role="alert">{{ connection_error }}</p>
+  {% endif %}
+  {% if calendars %}
+  <ul class="calendar-list">
+    {% for c in calendars %}
+    <li>
+      <span class="calendar-name">{{ c.summary }}</span>
+      {% if c.primary %}<span class="status">Primär</span>{% endif %}
+      {% if c.writable %}
+      <span class="status status-active">beschreibbar</span>
+      {% else %}
+      <span class="status">nur lesend</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <form method="post" action="/ui/kalender/disconnect"
+    data-confirm="Die Verbindung zu Google wirklich trennen? Hugo kann dann keine Kalender mehr lesen oder ändern.">
+    <button type="submit" class="button button-danger button-small">
+      Verbindung trennen
+    </button>
+  </form>
+  {% endif %}
+</section>
+
+<section aria-label="Ausstehende Kalenderaktionen">
+  <h2>Ausstehende Aktionen{% if open_actions %} <span class="muted">({{ open_actions|length }})</span>{% endif %}</h2>
+  {% for a in open_actions %}
+  <article class="card suggestion{% if a.status == 'conflict' %} important{% endif %}">
+    <header class="suggestion-head">
+      <span class="status status-action-{{ a.action_type }}">{{ fmt.action_type_label(a.action_type) }}</span>
+      <span class="status status-{{ a.status }}">{{ fmt.action_status_label(a.status) }}</span>
+      <span class="thread-ref">{{ calendar_names.get(a.calendar_id, a.calendar_id) }}</span>
+      <span class="date-hint">{{ fmt.action_time_text(a) }}</span>
+    </header>
+
+    <p class="suggestion-content">
+      {% if a.action_type == "delete" %}
+      {{ a.snapshot.summary or a.payload.summary }}
+      {% else %}
+      {{ a.payload.summary }}
+      {% endif %}
+    </p>
+
+    {% if a.action_type == "update" %}
+    {% set changes = fmt.action_changes(a) %}
+    {% if changes %}
+    <ul class="change-list">
+      {% for change in changes %}
+      <li>{{ change }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% endif %}
+
+    {% if a.payload.description and a.action_type != "delete" %}
+    <p class="suggestion-reason muted">{{ a.payload.description }}</p>
+    {% endif %}
+    {% if a.payload.location %}
+    <p class="suggestion-reason muted">Ort: {{ a.payload.location }}</p>
+    {% endif %}
+
+    {% if a.status == "conflict" and a.result and a.result.event_id %}
+    <div class="conflict-box">
+      <strong>Der Termin wurde seit dem Vorschlag verändert.</strong>
+      Aktueller Stand:
+      „{{ a.result.title }}“,
+      {{ fmt.event_time_text(a.result.start, a.result.all_day) }}
+      {% if a.result.end %}– {{ fmt.event_time_text(a.result.end, a.result.all_day) }}{% endif %}
+    </div>
+    {% endif %}
+
+    <footer class="actions">
+      {% if a.status == "conflict" %}
+      <form method="post" action="/ui/calendar-actions/{{ a.id }}"
+        data-confirm="Der Termin wurde zwischenzeitlich verändert. Trotzdem ausführen?">
+        <input type="hidden" name="action" value="confirm">
+        <input type="hidden" name="force" value="1">
+        <button type="submit" class="button button-primary button-small">Trotzdem ausführen</button>
+      </form>
+      {% else %}
+      <form method="post" action="/ui/calendar-actions/{{ a.id }}">
+        <input type="hidden" name="action" value="confirm">
+        <button type="submit" class="button button-primary button-small">Bestätigen</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/ui/calendar-actions/{{ a.id }}">
+        <input type="hidden" name="action" value="reject">
+        <button type="submit" class="button button-danger button-small">Ablehnen</button>
+      </form>
+    </footer>
+  </article>
+  {% else %}
+  <p class="empty-state card">Keine ausstehenden Kalenderaktionen. Hugo schlägt Änderungen im Chat vor; du bestätigst sie hier.</p>
+  {% endfor %}
+</section>
+
+{% if recent_actions %}
+<details class="deferred-section">
+  <summary>Verlauf ({{ recent_actions|length }})</summary>
+  {% for a in recent_actions %}
+  <article class="card suggestion muted-card">
+    <header class="suggestion-head">
+      <span class="status status-action-{{ a.action_type }}">{{ fmt.action_type_label(a.action_type) }}</span>
+      <span class="status status-{{ a.status }}">{{ fmt.action_status_label(a.status) }}</span>
+      <span class="thread-ref">{{ calendar_names.get(a.calendar_id, a.calendar_id) }}</span>
+      <span class="date-hint">{{ fmt.action_time_text(a) }}</span>
+    </header>
+    <p class="suggestion-content">
+      {{ a.snapshot.summary if a.action_type == "delete" and a.snapshot else a.payload.summary }}
+    </p>
+    {% if a.status == "failed" and a.error %}
+    <p class="suggestion-reason">Fehler: {{ a.error }}</p>
+    {% endif %}
+    {% if a.executed_at %}
+    <p class="suggestion-reason muted">Ausgeführt: {{ a.executed_at|de_datetime }}</p>
+    {% endif %}
+  </article>
+  {% endfor %}
+</details>
+{% endif %}
+{% endblock %}

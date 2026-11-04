@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Vorhaben – Hugo{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Vorhaben</h1>
+  <p class="muted">Änderungen besprichst du am besten im <a href="/ui/chat">Chat</a> mit Hugo.</p>
+</div>
+
+{% for status, items in groups %}
+{% if status in ("completed", "archived") %}
+<details class="thread-group">
+  <summary>{{ fmt.thread_status_label(status) }} ({{ items|length }})</summary>
+  {% for t in items %}
+  {% include "thread_row.html" %}
+  {% endfor %}
+</details>
+{% else %}
+<section class="thread-group" aria-label="{{ fmt.thread_status_label(status) }}">
+  <h2>{{ fmt.thread_status_label(status) }} <span class="muted">({{ items|length }})</span></h2>
+  {% for t in items %}
+  {% include "thread_row.html" %}
+  {% endfor %}
+</section>
+{% endif %}
+{% else %}
+<p class="empty-state card">Noch keine Vorhaben. Sprich mit Hugo im Chat über deine Pläne.</p>
+{% endfor %}
+{% endblock %}

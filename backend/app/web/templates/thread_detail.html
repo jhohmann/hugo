@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}{{ thread.title }} – Hugo{% endblock %}
+{% block content %}
+<nav class="breadcrumb" aria-label="Brotkrumen">
+  <a href="/ui/threads">Vorhaben</a> / {{ thread.title }}
+</nav>
+
+<article class="card thread-detail">
+  <header class="thread-detail-head">
+    <h1>{{ thread.title }}</h1>
+    <span class="status status-{{ thread.status }}">{{ fmt.thread_status_label(thread.status) }}</span>
+    {% if thread.priority %}
+    <span class="priority prio-{{ thread.priority }}" title="Priorität {{ thread.priority }} von 5">P{{ thread.priority }}</span>
+    {% endif %}
+  </header>
+
+  {% if thread.description %}
+  <p class="thread-description">{{ thread.description }}</p>
+  {% endif %}
+
+  <dl class="fact-list">
+    {% set event_text = fmt.event_range_text(thread) %}
+    {% if event_text %}
+    <dt>Ereignis</dt>
+    <dd>
+      {{ event_text }}
+      <span class="date-hint {{ fmt.urgency_class(thread.event_start) }}">({{ fmt.relative_label(thread.event_start) }})</span>
+    </dd>
+    {% endif %}
+    {% if thread.deadline %}
+    <dt>Deadline</dt>
+    <dd>
+      {{ thread.deadline|de_date }}
+      <span class="date-hint {{ fmt.urgency_class(thread.deadline) }}">({{ fmt.relative_label(thread.deadline) }})</span>
+    </dd>
+    {% endif %}
+    {% if thread.act_by %}
+    <dt>Handeln bis</dt>
+    <dd>
+      {{ thread.act_by|de_date }}
+      <span class="date-hint {{ fmt.urgency_class(thread.act_by) }}">({{ fmt.relative_label(thread.act_by) }})</span>
+      <span class="muted">– Hugos Empfehlung</span>
+    </dd>
+    {% endif %}
+    {% if thread.next_action %}
+    <dt>Nächster Schritt</dt>
+    <dd>{{ thread.next_action }}</dd>
+    {% endif %}
+    <dt>Angelegt</dt>
+    <dd>{{ thread.created_at|de_datetime }}</dd>
+    <dt>Zuletzt geändert</dt>
+    <dd>{{ thread.updated_at|de_datetime }}</dd>
+  </dl>
+
+  <p class="muted">Änderungen an diesem Vorhaben besprichst du am besten im <a href="/ui/chat">Chat</a> mit Hugo.</p>
+</article>
+
+{% if suggestions %}
+<section aria-label="Zugehörige Vorschläge">
+  <h2>Vorschläge zu diesem Vorhaben</h2>
+  {% for s in suggestions %}
+  <article class="card suggestion{% if s.status != 'open' %} muted-card{% endif %}">
+    <header class="suggestion-head">
+      <span class="status status-suggestion-{{ s.status }}">{{ fmt.suggestion_status_label(s.status) }}</span>
+      {% if s.priority %}
+      <span class="priority prio-{{ s.priority }}" title="Priorität {{ s.priority }} von 5">P{{ s.priority }}</span>
+      {% endif %}
+      {% if s.suggested_date %}
+      <span class="date-hint {{ fmt.urgency_class(s.suggested_date) }}">{{ s.suggested_date|de_date }} ({{ fmt.relative_label(s.suggested_date) }})</span>
+      {% endif %}
+    </header>
+    <p class="suggestion-content">{{ s.content }}</p>
+    {% if s.reason %}
+    <p class="suggestion-reason muted">{{ s.reason }}</p>
+    {% endif %}
+    {% if s.status in ("open", "deferred") %}
+    <footer class="actions">
+      {% if s.status == "open" %}
+      <form method="post" action="/ui/suggestions/{{ s.id }}">
+        <input type="hidden" name="action" value="deferred">
+        <input type="hidden" name="next" value="/ui/threads/{{ thread.id }}">
+        <button type="submit" class="button button-small">Zurückstellen</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/ui/suggestions/{{ s.id }}">
+        <input type="hidden" name="action" value="confirmed">
+        <input type="hidden" name="next" value="/ui/threads/{{ thread.id }}">
+        <button type="submit" class="button button-primary button-small">Bestätigen</button>
+      </form>
+      <form method="post" action="/ui/suggestions/{{ s.id }}" data-confirm="Diesen Vorschlag wirklich verwerfen?">
+        <input type="hidden" name="action" value="dismissed">
+        <input type="hidden" name="next" value="/ui/threads/{{ thread.id }}">
+        <button type="submit" class="button button-danger button-small">Verwerfen</button>
+      </form>
+    </footer>
+    {% endif %}
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

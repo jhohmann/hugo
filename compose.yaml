@@ -12,6 +12,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./backend/migrations/002_embeddings.sql:/docker-entrypoint-initdb.d/02-embeddings.sql:ro
+      - ./backend/migrations/003_thread_embeddings.sql:/docker-entrypoint-initdb.d/03-thread-embeddings.sql:ro
+      - ./backend/migrations/004_temporal.sql:/docker-entrypoint-initdb.d/04-temporal.sql:ro
+      - ./backend/migrations/005_proactivity.sql:/docker-entrypoint-initdb.d/05-proactivity.sql:ro
+      - ./backend/migrations/006_calendar.sql:/docker-entrypoint-initdb.d/06-calendar.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hugo -d hugo"]
       interval: 5s
