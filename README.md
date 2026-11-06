@@ -1,96 +1,69 @@
 # Hugo
 
-Hugo ist ein proaktiver persönlicher Assistent für Zeitplanung, längerfristige
-Vorhaben und Erinnerungen. Ein zentraler Agent verbindet Wissen und entscheidet,
-welche Werkzeuge helfen. Python übernimmt Speicherung, Validierung, Zeitrechnung,
-Scheduling und Freigabegrenzen. Sprache und Datumsdarstellung: Deutsch, Europe/Berlin.
+Hugo ist ein proaktiver persönlicher Assistent für Zeitplanung, längerfristige Vorhaben und Erinnerungen. Ein zentraler Agent verbindet Informationen, verfolgt offene Themen und schlägt nächste Schritte vor.
 
-**Stand: 6. November 2026. Es hat noch kein Deployment stattgefunden.** Entwickelt
-wird in dieser lokalen Windows-Arbeitskopie mit PostgreSQL in Docker. Ziel ist
-eine Docker Engine auf einem Proxmox-Gast; dieselbe Anwendung läuft dort als
-Webserver und separater Worker. Frühere Codespace-Anleitungen bleiben als
-Linux-Entwicklungsweg möglich. Betriebsbereitschaft auf Proxmox ist erst nach
-einem dortigen Test bestätigt.
+- **Sprache:** Deutsch
+- **Zeitzone:** Europe/Berlin
+- **Entwicklung:** Python lokal, PostgreSQL in Docker
+- **Betrieb:** Webserver und Worker auf einer Docker Engine, beispielsweise in einem Proxmox-Gast
+- **Zugriff:** Ein Nutzer mit Passwortanmeldung
 
-Diese Datei ist die gemeinsame Produkt-, Entwicklungs- und Betriebsdokumentation.
-[AGENTS.md](AGENTS.md) enthält Produktziele und verbindliche Arbeitsregeln für Agenten.
+[AGENTS.md](AGENTS.md) beschreibt die Produktziele und Arbeitsregeln für Entwicklungsagenten.
 
 ## Inhalt
 
-- [Lokal entwickeln](#lokal-entwickeln)
-- [Passwort und Sitzungen](#passwort-und-sitzungen)
+- [Lokale Einrichtung](#lokale-einrichtung)
+- [Projektstruktur](#projektstruktur)
+- [Bedienung](#bedienung)
+- [Anmeldung und Sitzungen](#anmeldung-und-sitzungen)
 - [Konfiguration](#konfiguration)
-- [Späterer Betrieb mit Docker auf Proxmox](#späterer-betrieb-mit-docker-auf-proxmox)
-- [Updates und Datenbankmigrationen](#updates-und-datenbankmigrationen)
-- [Backup, Restore und Rollback](#backup-restore-und-rollback)
+- [Docker-Betrieb](#docker-betrieb)
+- [Updates und Migrationen](#updates-und-migrationen)
+- [Backup und Wiederherstellung](#backup-und-wiederherstellung)
 - [Reverse-Proxy und HTTPS](#reverse-proxy-und-https)
-- [Bedienung und Oberfläche](#bedienung-und-oberfläche)
 - [Architektur und Datenmodell](#architektur-und-datenmodell)
 - [API](#api)
 - [Tests und Diagnose](#tests-und-diagnose)
-- [Grenzen und Roadmap](#grenzen-und-roadmap)
-- [Entwicklungsgeschichte und Dokumentationskonsolidierung](#entwicklungsgeschichte-und-dokumentationskonsolidierung)
+- [Grenzen und Weiterentwicklung](#grenzen-und-weiterentwicklung)
 
-## Lokal entwickeln
+## Lokale Einrichtung
 
-### Ordner und Zuständigkeiten
+### Voraussetzungen
 
-```text
-backend/
-  app/                 Anwendung und lokale Einstiegspunkte
-    agent/             Zentraler Agent und proaktive Auswertung
-    calendar/          Google-Zugriff und freizugebende Aktionen
-    storage/           PostgreSQL-Zugriff und Embeddings
-    tools/             Zeitrechnung und weitere Agentenwerkzeuge
-    web/               UI-Routen, Templates und statische Dateien
-  migrations/          Unveränderliche, versionierte SQL-Migrationen
-  requirements.txt     Laufzeitabhängigkeiten für lokale App und Docker
-  requirements-dev.txt Laufzeitabhängigkeiten plus Testwerkzeuge
-tests/                 Automatisierte Tests; Konfiguration in pyproject.toml
-scripts/               Update und ausdrücklich gestartete Diagnosewerkzeuge
-```
+- Python 3.12 oder neuer
+- Docker mit Compose v2
+- Git
+- OpenAI-API-Schlüssel
 
-Im Projektstamm liegen Dokumentation, Compose-/Docker-Konfiguration und lokale
-Umgebungsdateien. `.venv`, Testcaches, Logs, Zugangsdaten und `backups/` sind lokale,
-nicht versionierte Dateien. Der Docker-Build übernimmt nur die benötigten Quellen.
-Neue Dateien gehören in die vorhandene fachliche Struktur; keine parallelen
-Implementierungen oder Testskripte zwischen Anwendungscode ablegen.
+Die virtuelle Umgebung und die Datei `.env` liegen im Projektordner. Zugangsdaten gehören weder in Git noch in Docker-Images.
 
-Manuelle Diagnose vom Projektstamm mit der aktivierten virtuellen Umgebung:
-`python scripts/check_embeddings.py` vergleicht Beispielsätze im Speicher, ohne
-Datenbankeinträge anzulegen (beim ersten Lauf gegebenenfalls Modell-Download).
-`python scripts/check_google_calendar.py` erhält das frühere persönliche
-OAuth-Probeskript einschließlich seiner lokalen Anpassungen. Es benötigt separat
-`google-auth-oauthlib` und `google-api-python-client`, liest `credentials.json`,
-schreibt `token.json` und listet Termintitel. Es gehört nicht zum normalen Start
-oder Testlauf; die Anwendung verwendet den OAuth-Weg unter `/ui/kalender`.
+### Windows: Einrichtung
 
-### Einrichtung und Start
-
-Voraussetzungen: Python 3.12 oder neuer, Docker mit Compose v2, Git und ein
-OpenAI-API-Schlüssel. Die aktuelle Windows-Umgebung nutzt Python 3.13.
-Die virtuelle Umgebung und `.env` liegen im Projektordner. Zugangsdaten werden
-nicht in Git oder in Docker-Images aufgenommen.
-
-Einmalig im Projektordner, PowerShell:
+Im Projektordner ausführen:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r backend/requirements-dev.txt
-Copy-Item .env.example .env # nur wenn noch keine eigene .env existiert
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
 docker compose up -d db
 cd backend
 ..\.venv\Scripts\python.exe -m app.passwords
 ```
 
-Das letzte Kommando fragt ein Passwort zweimal verdeckt ab und gibt einen
-`HUGO_PASSWORD_HASH=scrypt-v1:...` aus. Die ganze Zeile in `.env` eintragen,
-außerdem `OPENAI_API_KEY` setzen. Für lokales HTTP gilt `HUGO_COOKIE_SECURE=false`.
-Die Entwicklungskonfiguration verbindet sich mit
-`postgresql://hugo:hugo_dev@127.0.0.1:5432/hugo`. Explizites IPv4 vermeidet hier
-das beobachtete Warten auf die nicht erreichbare IPv6-Adresse von `localhost`.
+Die Passwortabfrage erzeugt eine Zeile `HUGO_PASSWORD_HASH=scrypt-v1:...`. Diese in `.env` eintragen.
 
-Normaler Start aus dem Projektordner:
+Folgende Werte konfigurieren:
+
+| Variable | Wert |
+|---|---|
+| `OPENAI_API_KEY` | Eigener API-Schlüssel |
+| `HUGO_PASSWORD_HASH` | Erzeugter Passwort-Hash |
+| `HUGO_COOKIE_SECURE` | `false` für lokales HTTP |
+| `DATABASE_URL` | `postgresql://hugo:hugo_dev@127.0.0.1:5432/hugo` |
+
+### Windows: Start
+
+Im Projektordner ausführen:
 
 ```powershell
 docker compose up -d db
@@ -98,132 +71,284 @@ cd backend
 ..\.venv\Scripts\python.exe -m app.dev
 ```
 
-`app.dev` lädt die `.env` aus dem Projektordner, führt ausstehende Migrationen
-aus und startet Uvicorn auf `127.0.0.1:8000` mit automatischem Code-Neuladen.
-Bei einem Migrationsfehler startet der Webserver nicht. Browser:
-[http://127.0.0.1:8000/ui](http://127.0.0.1:8000/ui). Beenden mit Strg+C.
-`--port 8001`, `--no-reload` und `--env-file PFAD` sind optional.
-`.env`-Änderungen erfordern einen vollständigen Neustart des Prozesses.
-Schon gesetzte Prozessvariablen haben Vorrang vor der Datei; bei alten
-PowerShell-`$env:...`-Werten ein neues Terminal verwenden.
+Die Oberfläche ist unter [http://127.0.0.1:8000/ui](http://127.0.0.1:8000/ui) erreichbar. **Strg+C** beendet den Server.
 
-Linux/macOS/Codespace, vom Projektordner:
+`app.dev` lädt die Projekt-`.env`, führt ausstehende Migrationen aus und startet Uvicorn mit automatischem Neuladen des Anwendungscodes. Bei einem Migrationsfehler startet der Server nicht.
+
+| Option | Funktion |
+|---|---|
+| `--port 8001` | Anderen Port verwenden |
+| `--no-reload` | Automatisches Neuladen deaktivieren |
+| `--env-file PFAD` | Andere Umgebungsdatei laden |
+
+Änderungen an `.env` benötigen einen vollständigen Prozessneustart. Bereits gesetzte Prozessvariablen haben Vorrang vor der Datei.
+
+### Linux und macOS
+
+Im Projektordner ausführen:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r backend/requirements-dev.txt
-# .env anhand .env.example einrichten; bestehende .env nicht überschreiben
+test -f .env || cp .env.example .env
 docker compose up -d db
 cd backend
+../.venv/bin/python -m app.passwords
+```
+
+API-Schlüssel, Passwort-Hash und lokale Konfiguration in `.env` eintragen. Anschließend im Ordner `backend` starten:
+
+```bash
 ../.venv/bin/python -m app.dev
 ```
 
-Für einen reinen Migrationslauf: im Ordner `backend` mit derselben Python-Umgebung
-`python -m app.migrate`. Für einen direkten Uvicorn-Start, nachdem das Schema
-aktualisiert wurde: `python -m uvicorn app.main:app --env-file ../.env --host
-127.0.0.1 --port 8000 --reload`. Anders als `app.dev` migriert Uvicorn nicht.
+### Worker
 
-Der tägliche Worker ist optional und wird **nicht** mit dem lokalen Webserver
-gestartet. In einem zweiten Terminal im Ordner `backend`:
+Der Worker läuft als separater Prozess. In einem zweiten Terminal im Ordner `backend` starten:
 
 ```powershell
 ..\.venv\Scripts\python.exe -m app.worker
 ```
 
-Er lädt ebenfalls die Projekt-`.env`. Standard: täglich 06:00 UTC, also 07:00
-in der Berliner Winterzeit beziehungsweise 08:00 in der Sommerzeit.
-Ohne Worker bleibt „Heute → Jetzt auswerten“ nutzbar. Eine Auswertung kann
-kostenpflichtige OpenAI-Aufrufe auslösen.
+Unter Linux und macOS lautet der Python-Pfad `../.venv/bin/python`.
 
-## Passwort und Sitzungen
+- Der Worker lädt die Projekt-`.env`.
+- Standardzeit: täglich **06:00 UTC**, entsprechend 07:00 Uhr im Berliner Winter und 08:00 Uhr im Sommer.
+- Ohne Worker steht die manuelle Auswertung unter **Heute → Jetzt auswerten** zur Verfügung.
+- Auswertungen verwenden die OpenAI-API und können Kosten verursachen.
 
-Ein gemeinsames Passwort, kein Benutzername und keine Benutzerverwaltung.
-`python -m app.passwords` verlangt 12 bis 1024 Zeichen. Nur der gesalzene
-scrypt-Hash wird konfiguriert. Das Klartext-Passwort gehört weder in Startbefehle
-noch in Git. Ohne gültigen Hash bleibt die Anwendung gesperrt (HTTP 503).
+### Einzelne Einstiegspunkte
 
-Die Anmeldung unter `/ui/login` setzt ein zufälliges Token im HttpOnly-Cookie
-`hugo_session`. PostgreSQL speichert nur dessen SHA-256-Hash. Ohne Häkchen gilt
-ein Browser-Sitzungscookie, serverseitig höchstens 12 Stunden. Browser mit
-Sitzungswiederherstellung können solche Cookies erhalten. „Angemeldet bleiben“
-gilt 30 Tage ab Anmeldung, auch über Server- und Browser-Neustarts hinweg.
-Es gibt keine gleitende Verlängerung.
+Mit aktivierter virtueller Umgebung im Ordner `backend`:
 
-Abmelden widerruft die aktuelle Sitzung sofort. Ein neu erzeugter Passwort-Hash
-und Neustart aller Web-Prozesse machen alte Sitzungen ungültig. Abgelaufene
-Sitzungen werden bei einer erfolgreichen Anmeldung bereinigt. Maximal zehn
-Anmeldeversuche pro Minute insgesamt, über IPs und Prozesse hinweg; danach
-HTTP 429 mit `Retry-After: 60`. Das Limit liegt in PostgreSQL.
+```bash
+# Nur Migrationen ausführen
+python -m app.migrate
 
-Cookies verwenden SameSite=Lax und standardmäßig Secure. Für HTTPS
-`HUGO_COOKIE_SECURE=true`, ausschließlich bei lokalem HTTP `false`. UI,
-JSON-API, API-Dokumentation und Kalenderaktionen sind geschützt. Öffentlich
-bleiben Anmeldung, statische Dateien und `/health`. Geschützte Antworten
-werden mit `Cache-Control: no-store` ausgeliefert.
+# Webserver ohne vorgeschaltete Migration starten
+python -m uvicorn app.main:app --env-file ../.env --host 127.0.0.1 --port 8000 --reload
+```
 
-API-Skripte melden sich mit `POST /ui/login` und den Formfeldern `password`
-sowie optional `remember=true` an, übernehmen das Cookie und verwenden es
-für weitere Anfragen. POST/PATCH/PUT/DELETE benötigen einen passenden
-`Origin`/`Referer`; Skripte ohne diese Header setzen `X-Hugo-Request: 1`, auch
-beim Login. Ein fremder Origin wird trotz dieses Headers abgewiesen.
-Cookies nicht loggen oder teilen. Swagger `/docs` funktioniert nach der
-Browser-Anmeldung mit derselben Sitzung.
+## Projektstruktur
+
+```text
+backend/
+  app/
+    agent/              Zentraler Agent und proaktive Auswertung
+    calendar/           Google-Zugriff und freizugebende Aktionen
+    storage/            PostgreSQL-Zugriff und Embeddings
+    tools/              Zeitrechnung und Agentenwerkzeuge
+    web/                UI-Routen, Templates und statische Dateien
+  migrations/           Versionierte SQL-Migrationen
+  requirements.txt      Laufzeitabhängigkeiten
+  requirements-dev.txt  Laufzeitabhängigkeiten und Testwerkzeuge
+tests/                  Automatisierte Tests
+scripts/                Updates und manuelle Diagnose
+pyproject.toml          Testkonfiguration
+compose.yaml            Lokale Entwicklungsdatenbank
+compose.prod.yaml       Docker-Stack mit Datenbank, Migration, Web und Worker
+Dockerfile              Gemeinsames Anwendungsimage
+```
+
+### Lokale Dateien
+
+Diese Dateien und Verzeichnisse werden nicht versioniert:
+
+| Pfad | Inhalt |
+|---|---|
+| `.env`, `.env.prod` | Zugangsdaten und lokale Konfiguration |
+| `.venv/` | Installierte Python-Abhängigkeiten |
+| `.pytest_cache/`, `pytest-cache-files-*/` | Testcaches |
+| `__pycache__/` | Generierter Python-Bytecode |
+| `*.log`, `logs/` | Laufzeitprotokolle |
+| `backups/` | Datenbanksicherungen |
+| `credentials.json`, `token.json` | Zugangsdaten für das manuelle Google-Diagnosewerkzeug |
+
+Der Docker-Build übernimmt Anwendungscode, Migrationen und Laufzeitabhängigkeiten.
+
+## Bedienung
+
+Die Oberfläche unter `/ui` führt nach der Anmeldung zur Ansicht **Heute**. Inhaltliche Änderungen an Erinnerungen und Vorhaben erfolgen über den Chat.
+
+### Chat
+
+`/ui/chat` · `/ui/chat/{id}`
+
+- Neue Unterhaltung beginnen oder vorhandene fortsetzen.
+- Vollständigen Nachrichtenverlauf anzeigen.
+- Die 50 jüngsten Unterhaltungen anhand ihrer ersten Nutzernachricht auswählen.
+- Entwurf bei einem Agentenfehler erhalten.
+- Mit **Enter** senden, mit **Shift+Enter** einen Zeilenumbruch einfügen.
+
+### Heute
+
+`/ui/heute`
+
+- Offene Vorschläge mit Begründung, Priorität P1–P5, Datum und Vorhabenbezug.
+- Vorschläge bestätigen, zurückstellen oder verwerfen.
+- Zurückgestellte Vorschläge in einem einklappbaren Bereich.
+- Letzten Auswertungslauf anzeigen und über **Jetzt auswerten** eine Auswertung starten.
+
+Vorschläge entstehen durch manuelle oder geplante Auswertungen. Beim Anzeigen werden sie als zugestellt markiert.
+
+### Vorhaben
+
+`/ui/threads` · `/ui/threads/{id}`
+
+- Gruppierung nach Aktiv, Wartet und Idee; Erledigt und Archiviert sind einklappbar.
+- Übersicht über nächsten Schritt, Priorität, Ereigniszeitraum und Fristen.
+- Detailansicht mit Beschreibung, ursprünglicher Zeitangabe und zugehörigen Vorschlägen.
+
+### Kalender
+
+`/ui/kalender`
+
+- Google-Konto verbinden oder trennen.
+- Vorgeschlagene Kalenderaktionen, Konflikte und vergangene Aktionen anzeigen.
+- Schreibaktionen ausdrücklich freigeben.
+
+Die Bestätigung eines allgemeinen Vorschlags ersetzt keine Kalenderfreigabe. Kalenderaktionen haben einen eigenen Bestätigungsweg.
+
+### Darstellung
+
+Die Oberfläche verwendet serverseitige Jinja2-Templates und lokale CSS-/JavaScript-Dateien.
+
+- Einspaltige Darstellung bis 760 px; Chat-Sidebar auf größeren Bildschirmen.
+- Hell-/Dunkelmodus entsprechend der Systemeinstellung.
+- Semantische Elemente, ARIA-Beschriftungen und Statusmeldungen für Tastatur und Screenreader.
+- Hervorhebung hoher Prioritäten ab P4 und überfälliger Daten.
+- Formulare funktionieren ohne JavaScript; Ladeanzeigen, Bestätigungsdialoge und Enter-zum-Senden benötigen JavaScript.
+
+Listen sind begrenzt und haben keine vollständige Seitennavigation. Einklappbare Bereiche laden ihre Inhalte nicht separat nach.
+
+## Anmeldung und Sitzungen
+
+### Passwort
+
+Hugo verwendet ein gemeinsames Passwort ohne Benutzernamen.
+
+- Länge: 12 bis 1024 Zeichen.
+- Konfiguration als gesalzener scrypt-Hash über `python -m app.passwords`.
+- Ohne gültigen `HUGO_PASSWORD_HASH` bleibt die Anwendung gesperrt: HTTP 503.
+- Höchstens zehn Anmeldeversuche pro Minute insgesamt, über alle IPs und Prozesse hinweg.
+- Bei Überschreitung: HTTP 429 mit `Retry-After: 60`.
+
+### Sitzungsdauer
+
+| Anmeldung | Gültigkeit |
+|---|---|
+| Ohne „Angemeldet bleiben“ | Browser-Sitzungscookie, serverseitig höchstens 12 Stunden |
+| Mit „Angemeldet bleiben“ | 30 Tage ab Anmeldung, auch über Neustarts hinweg |
+
+Browser mit Sitzungswiederherstellung können Sitzungscookies erhalten. Es gibt keine gleitende Verlängerung.
+
+Abmelden widerruft die aktuelle Sitzung. Ein neuer Passwort-Hash mit Neustart aller Webprozesse macht vorhandene Sitzungen ungültig.
+
+### Zugriffsschutz
+
+Das Cookie `hugo_session` enthält ein zufälliges Token. PostgreSQL speichert dessen SHA-256-Hash. Abgelaufene Sitzungen werden bei erfolgreicher Anmeldung bereinigt.
+
+- Cookie-Eigenschaften: HttpOnly, SameSite=Lax und standardmäßig Secure.
+- Für HTTPS: `HUGO_COOKIE_SECURE=true`.
+- Für lokales HTTP: `HUGO_COOKIE_SECURE=false`.
+- Geschützt: Oberfläche, JSON-API, API-Dokumentation und Kalenderaktionen.
+- Öffentlich: Anmeldung, statische Dateien und `/health`.
+- Geschützte Antworten verwenden `Cache-Control: no-store`.
+
+### API-Anmeldung
+
+1. `POST /ui/login` mit den Formfeldern `password` und optional `remember=true` senden.
+2. Das zurückgegebene Cookie für weitere Anfragen übernehmen.
+3. Für POST, PATCH, PUT und DELETE einen passenden `Origin` oder `Referer` mitsenden.
+
+Skripte ohne Origin-/Referer-Header setzen `X-Hugo-Request: 1`, auch beim Login. Ein fremder Origin wird trotz dieses Headers abgewiesen.
+
+Swagger unter `/docs` verwendet die Sitzung der Browser-Anmeldung.
 
 ## Konfiguration
 
-| Variable | Lokal / Docker / Bedeutung |
+### Datenbank
+
+| Variable | Standard / Bedeutung |
 |---|---|
-| `DATABASE_URL` | Optionaler vollständiger Verbindungsstring; hat Vorrang vor einzelnen DB-Feldern. Lokal siehe `.env.example`. In Docker normalerweise weglassen. |
-| `DB_HOST`, `DB_PORT` | Ohne URL lokal `127.0.0.1`, `5432`; Docker setzt `db`, `5432`. Verbindungsaufbau ist zeitlich begrenzt. |
-| `DB_NAME`, `DB_USER` | Standard jeweils `hugo`. |
-| `DB_PASSWORD` | Nur lokal Standard `hugo_dev`; Docker verlangt ein eigenes Passwort. Einzelne Felder erlauben Sonderzeichen ohne URL-Encoding. |
-| `OPENAI_API_KEY` | Schlüssel für den zentralen Agenten; erforderlich zum normalen App-Start. |
-| `HUGO_PASSWORD_HASH` | Erzeugt durch `app.passwords`, für die Anmeldung erforderlich. |
-| `HUGO_COOKIE_SECURE` | Standard `true`; lokales HTTP `false`. |
-| `WEB_PORT` | Nur Docker: Standard `127.0.0.1:8000`, Format `[BIND_ADRESSE:]PORT`. |
-| `LOG_LEVEL` | Standard `INFO`, unter anderem für Worker-Logging. Uvicorn hat eigene CLI-Logoptionen. |
-| `SCHEDULER_HOUR`, `SCHEDULER_MINUTE` | Standard `6`, `0`, jeweils UTC (0–23 / 0–59). |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optionaler Google-OAuth-Client; ohne ihn bleibt Kalender unverbunden. |
-| `GOOGLE_REDIRECT_URI` | Exakt die im Google-Client registrierte Callback-URL; lokal `http://127.0.0.1:8000/ui/kalender/auth/callback`, später die HTTPS-Adresse. |
-| `FORWARDED_ALLOW_IPS` | Docker/Uvicorn: nur tatsächliche Reverse-Proxy-IP oder dessen vertrauenswürdiges Netz; Standard `127.0.0.1`. |
-| `HUGO_IMAGE` | Optionaler Docker-Image-Name, Standard `hugo:local`. Web, Worker und Migration nutzen dasselbe Image. |
+| `DATABASE_URL` | Vollständiger Verbindungsstring; hat Vorrang vor einzelnen DB-Feldern |
+| `DB_HOST` | Lokal `127.0.0.1`, im Docker-Stack `db` |
+| `DB_PORT` | `5432` |
+| `DB_NAME` | `hugo` |
+| `DB_USER` | `hugo` |
+| `DB_PASSWORD` | Lokal `hugo_dev`; im Docker-Stack eigenes Passwort erforderlich |
 
-Die lokale `compose.yaml` startet nur die Entwicklungsdatenbank mit festem
-Entwicklungspasswort und bindet Port 5432 ausschließlich an IPv4-Loopback.
-`.env.prod.template` ist die separate Vorlage für den späteren Docker-Betrieb.
-Eine Änderung des DB-Passworts in einer Env-Datei ändert nicht das Passwort
-einer bereits initialisierten PostgreSQL-Rolle; diese Änderung muss koordiniert
-in der Datenbank erfolgen. Die Templates ersetzen keine vorhandenen Secrets.
+Im Docker-Stack werden einzelne DB-Felder verwendet. Damit benötigen Sonderzeichen im Passwort kein URL-Encoding.
 
-## Späterer Betrieb mit Docker auf Proxmox
+Die lokale `compose.yaml` startet nur PostgreSQL und bindet Port 5432 an `127.0.0.1`. Eine Änderung der Env-Datei ändert nicht das Passwort einer bereits initialisierten PostgreSQL-Rolle.
 
-Ziel: Docker Engine und Compose v2 auf einem Proxmox-Gast, beispielsweise
-Debian 12 oder Ubuntu 24.04 LTS. Frühere Planung: ungefähr 4–8 GB RAM und
-20 GB Platte als Ausgangspunkt, keine gemessene Kapazitätszusage. Platzbedarf
-für Python/Embedding-Modell, Daten, Images und Backups berücksichtigen.
-Git, SSH/sudo und ausgehender Internetzugang werden benötigt. Installation
-von Docker nach der [offiziellen Debian-Anleitung](https://docs.docker.com/engine/install/debian/);
-Zugriff auf die Docker-Gruppe erlaubt weitreichende Kontrolle des Hosts.
+### Anwendung
 
-Repository beispielsweise unter `/opt/hugo` klonen:
+| Variable | Standard / Bedeutung |
+|---|---|
+| `OPENAI_API_KEY` | API-Schlüssel; für den normalen App-Start erforderlich |
+| `HUGO_PASSWORD_HASH` | Mit `app.passwords` erzeugter Hash |
+| `HUGO_COOKIE_SECURE` | `true`; für lokales HTTP `false` |
+| `LOG_LEVEL` | `INFO`; Uvicorn hat zusätzlich eigene CLI-Logoptionen |
+| `SCHEDULER_HOUR` | `6`, Stunde in UTC von 0 bis 23 |
+| `SCHEDULER_MINUTE` | `0`, Minute von 0 bis 59 |
+
+### Google Calendar
+
+| Variable | Bedeutung |
+|---|---|
+| `GOOGLE_CLIENT_ID` | OAuth-Client-ID |
+| `GOOGLE_CLIENT_SECRET` | OAuth-Client-Secret |
+| `GOOGLE_REDIRECT_URI` | Exakt die bei Google registrierte Callback-URL |
+
+Lokale Callback-URL:
+
+```text
+http://127.0.0.1:8000/ui/kalender/auth/callback
+```
+
+Für den externen Betrieb die entsprechende HTTPS-Adresse verwenden. Ohne OAuth-Konfiguration bleibt der Kalender unverbunden.
+
+### Docker und Proxy
+
+| Variable | Standard / Bedeutung |
+|---|---|
+| `WEB_PORT` | `127.0.0.1:8000`; Format `[BIND_ADRESSE:]PORT` |
+| `HUGO_IMAGE` | `hugo:local`; gemeinsames Image für Web, Worker und Migration |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1`; auf die tatsächliche vertrauenswürdige Proxy-IP einstellen |
+
+Vorlagen: [`.env.example`](.env.example) für lokale Entwicklung und [`.env.prod.template`](.env.prod.template) für Docker.
+
+## Docker-Betrieb
+
+### Voraussetzungen
+
+- Linux-Gast mit Docker Engine und Compose v2
+- Git und Zugriff auf den Host
+- Ausgehender Internetzugang für OpenAI, Google und Modell-Downloads
+- Speicherplatz für Datenbank, Modelle, Images und Backups
+
+Docker-Installation: [offizielle Debian-Anleitung](https://docs.docker.com/engine/install/debian/).
+
+### Einrichtung
 
 ```bash
 git clone https://github.com/jhohmann/hugo.git /opt/hugo
 cd /opt/hugo
 cp .env.prod.template .env.prod
 chmod 600 .env.prod
-```
-
-DB-Passwort (zum Beispiel mit `openssl rand -hex 32`), OpenAI-Schlüssel,
-Passwort-Hash und gegebenenfalls Google-/Proxy-Werte eintragen. Ohne lokale
-Python-Installation lässt sich der Hash nach dem Build erzeugen:
-
-```bash
 docker build -t hugo:local .
 docker run --rm -it --entrypoint python hugo:local -m app.passwords
 ```
 
-Danach der erste Start:
+In `.env.prod` eintragen:
+
+- Eigenes DB-Passwort, beispielsweise erzeugt mit `openssl rand -hex 32`
+- OpenAI-API-Schlüssel
+- Erzeugten Passwort-Hash
+- Bei Bedarf Google-OAuth- und Proxy-Konfiguration
+
+### Start
 
 ```bash
 docker compose --env-file .env.prod -f compose.prod.yaml up -d --build
@@ -232,132 +357,120 @@ docker compose --env-file .env.prod -f compose.prod.yaml logs migrate web worker
 curl --fail http://127.0.0.1:8000/health
 ```
 
-Die Produktionsdatei ist eigenständig; **nicht** mit `compose.yaml` kombinieren.
-Es gibt vier Services:
+`compose.prod.yaml` ist eigenständig und wird nicht mit `compose.yaml` kombiniert.
 
-| Service | Aufgabe und Startbedingung |
-|---|---|
-| `db` | PostgreSQL 17 + pgvector, persistentes Volume `hugo_postgres_data`, kein veröffentlichter DB-Port. |
-| `migrate` | Einmaliger Schemalauf nach gesundem PostgreSQL; Erfolg bedeutet Exitcode 0, danach beendet. |
-| `web` | FastAPI/Uvicorn nach erfolgreicher Migration; Standardport nur auf Loopback. |
-| `worker` | Separater APScheduler-Prozess nach erfolgreicher Migration; kein öffentlicher Port. |
+### Services
 
-Web und Worker haben zusätzlich zum internen DB-Netz ein Netzwerk für
-ausgehenden Internetzugang: OpenAI, Google und initialer Embedding-Download.
-Ein gemeinsames Volume `model_cache` hält die lokalen Modelle über Updates.
-Das Multi-stage-Image verwendet Python 3.12, CPU-PyTorch, eine virtuelle
-Umgebung und den Nutzer `hugo` ohne Root-Rechte. Die App braucht keine GPU.
-Secrets, Dokumentation, Tests, Backups, lokale Umgebungen und Logs werden
-vom Build-Kontext ausgeschlossen. Es gibt keinen Frontend-Build und kein CDN.
+| Service | Aufgabe | Startbedingung |
+|---|---|---|
+| `db` | PostgreSQL 17 mit pgvector | Keine |
+| `migrate` | Einmaliger Schemalauf | Datenbank gesund |
+| `web` | FastAPI/Uvicorn | Migration erfolgreich |
+| `worker` | Tägliche Auswertung | Migration erfolgreich |
 
-Die DB wird alle 5 Sekunden geprüft, der Webserver alle 30 Sekunden; der
-Webserver hat 90 Sekunden Startfrist für Bibliotheksimporte. `/health` ist
-ein Prozesscheck und prüft weder Anmeldung noch Datenbankbereitschaft.
-Der Worker hat keinen HTTP-Healthcheck. `restart: unless-stopped` startet
-beendete Prozesse neu; **ein Status „unhealthy“ allein startet einen
-Container nicht automatisch neu**.
+Der Migrationscontainer beendet sich bei Erfolg mit Exitcode 0. Die Datenbank hat keinen veröffentlichten Port; der Webserver bindet standardmäßig an Loopback.
 
-Logs verwenden Dockers `json-file`-Rotation: DB 10 MB × 3, Web 50 MB × 5,
-Worker 30 MB × 3. Betriebskommandos (immer dieselbe Env-Datei verwenden):
+### Speicherung und Netzwerk
+
+- `hugo_postgres_data` enthält die Datenbank.
+- `model_cache` hält die heruntergeladenen Modelle.
+- Web und Worker verwenden ein internes DB-Netz und ein zusätzliches Netz für ausgehende Verbindungen.
+- Das Image verwendet Python 3.12, CPU-PyTorch und den Nutzer `hugo` ohne Root-Rechte.
+- Eine GPU ist nicht erforderlich.
+
+Compose-Volumes gehören zum jeweiligen Projektnamen. Ein anderer Projektname verwendet andere Volumes.
+
+### Healthchecks und Logs
+
+| Service | Prüfung | Logrotation |
+|---|---|---|
+| Datenbank | Alle 5 Sekunden | 10 MB × 3 |
+| Web | Alle 30 Sekunden, 90 Sekunden Startfrist | 50 MB × 5 |
+| Worker | Kein HTTP-Healthcheck | 30 MB × 3 |
+
+`/health` prüft den Webprozess, nicht die Datenbank oder Anmeldung. `restart: unless-stopped` startet beendete Prozesse neu; ein Status `unhealthy` allein löst keinen Neustart aus.
 
 ```bash
 docker compose --env-file .env.prod -f compose.prod.yaml logs -f web
 docker compose --env-file .env.prod -f compose.prod.yaml logs --since 24h worker
-docker compose --env-file .env.prod -f compose.prod.yaml restart web
 docker compose --env-file .env.prod -f compose.prod.yaml stop web worker
 ```
 
-`restart` lädt weder ein neues Image noch geänderte Container-Umgebungsvariablen;
-dafür Container mit `up -d` neu erstellen. `down` ohne `--volumes` erhält
-benannte Volumes. Nicht routinemäßig Volumes löschen oder `system prune --volumes`
-für Logbereinigung verwenden. Docker Compose/Volumes sind projektbezogen;
-ein anderer Projektname bedeutet andere Volumes und scheinbar leere Daten.
+`restart` übernimmt weder neue Images noch geänderte Umgebungsvariablen. Dafür `up -d` verwenden. `down` ohne `--volumes` erhält benannte Volumes.
 
-## Updates und Datenbankmigrationen
+## Updates und Migrationen
 
-**Ja: Fast-Forward-Pull ist die richtige Basis.** Zusätzlich braucht ein Update
-die neuen Abhängigkeiten beziehungsweise ein neues Image, Migrationen und
-einen Neustart. Vor Schemaänderungen ein Backup anlegen; Web und Worker während
-des Schemalaufs stoppen. `git pull --ff-only` bricht bei divergierter Historie
-ab und erfindet keinen Merge. Es ersetzt weder Commit/Push der Entwicklungsarbeit
-noch den Umgang mit uncommitteten Änderungen. Auf dem späteren Docker-Host
-soll die Arbeitskopie sauber bleiben; Secrets und Daten liegen außerhalb von Git.
+Ein Update umfasst Code, Abhängigkeiten, Datenbankschema und Prozessneustart. Vor Schemaänderungen die Datenbank sichern und Web sowie Worker stoppen.
 
-### Lokal
+### Lokale Entwicklung
 
-Webserver und optionalen Worker mit Strg+C stoppen, Daten sichern, dann im Projektordner:
+Im Projektordner, nach dem Stoppen der Anwendung und dem Backup:
 
 ```powershell
 git pull --ff-only
 if ($LASTEXITCODE -ne 0) { throw 'Git-Update fehlgeschlagen' }
+
 .\.venv\Scripts\python.exe -m pip install -r backend/requirements-dev.txt
-if ($LASTEXITCODE -ne 0) { throw 'Abhängigkeiten konnten nicht installiert werden' }
+if ($LASTEXITCODE -ne 0) { throw 'Installation fehlgeschlagen' }
+
 docker compose up -d db
 if ($LASTEXITCODE -ne 0) { throw 'Datenbankstart fehlgeschlagen' }
+
 cd backend
 ..\.venv\Scripts\python.exe -m app.dev
 ```
 
-Der letzte Befehl übernimmt die Migration vor dem Start. Einen zusätzlich
-benutzten Worker anschließend ebenfalls neu starten. Unter Linux entsprechend
-`.venv/bin/python` nutzen und die Befehle bei Fehlern abbrechen.
+Einen separat verwendeten Worker anschließend neu starten. Unter Linux und macOS den Python-Pfad `.venv/bin/python` verwenden und bei Fehlern abbrechen.
 
 ### Docker-Host
-
-Der Updateablauf ist in [scripts/update.sh](scripts/update.sh) zusammengefasst:
 
 ```bash
 bash scripts/update.sh
 ```
 
-Das Skript verlangt eine saubere getrackte Arbeitskopie, führt `git pull --ff-only`
-aus, baut das gemeinsame Image, prüft die DB, stoppt Web/Worker, schreibt einen
-PostgreSQL-Dump nach `backups/`, führt den Migrationsservice aus und startet
-Web/Worker mit dem neuen Image. Die Datenbank und ihre Volumes bleiben bestehen.
-Bei Build-Fehlern läuft die alte App weiter. Nach einem Migrationsfehler bleiben
-die Apps gestoppt; den Fehler prüfen, nicht mit einem alten Image blind starten.
-Es gibt keinen automatischen Daten-Rollback.
+Das [Update-Skript](scripts/update.sh) benötigt eine saubere getrackte Arbeitskopie und führt folgende Schritte aus:
 
-### Schema und zukünftige Änderungen
+1. Code mit `git pull --ff-only` aktualisieren.
+2. Gemeinsames Image bauen.
+3. Datenbankbereitschaft prüfen.
+4. Web und Worker stoppen.
+5. Datenbank nach `backups/` sichern.
+6. Migrationen ausführen.
+7. Web und Worker mit dem neuen Image starten.
 
-Die Entwicklungsschritte `schema.sql` und Migrationen 002–007 sind vor dem
-ersten Deployment in **[001_initial.sql](backend/migrations/001_initial.sql)**
-zusammengeführt. Diese Datei ist die einzige Definition der Ausgangsbasis.
-Sie erstellt auch pgvector, Vektorspalten/-indizes, Zeitfelder, Vorschläge,
-Kalender- und Authentifizierungstabellen. Die vollständige bestehende lokale
-Datenbank kann ohne Löschen ihrer Inhalte übernommen werden. Unvollständige
-alte Schemata werden nicht stillschweigend als aktuell markiert.
+Bei Build-Fehlern läuft die Anwendung weiter. Nach einem Migrationsfehler bleiben Web und Worker gestoppt. Ein automatischer Daten-Rollback erfolgt nicht.
 
-Der Migrationsrunner funktioniert gleich bei leerer und vorhandener Datenbank.
-`schema_version` speichert Nummer, Dateiname, SHA-256-Prüfsumme und Zeitpunkt.
-Eine PostgreSQL-Advisory-Lock serialisiert gleichzeitige Läufe. Jede Datei und
-ihr Versionsvermerk werden gemeinsam in einer Transaktion ausgeführt. Ein Fehler
-rollt diese Datei zurück und liefert einen von null verschiedenen Exitcode.
-Früher in demselben Lauf abgeschlossene Migrationen bleiben angewendet.
+### Migrationsdateien
 
-Ab jetzt die angewendete Ausgangsbasis **nicht mehr ändern**. Neue Änderungen
-werden `002_<name>.sql`, `003_<name>.sql` usw. Bereits angewendete Dateien
-werden weder geändert noch umbenannt, gelöscht oder in die Vergangenheit
-einsortiert. Fehlende/geänderte Dateien und eine zum Checkout neuere Datenbank
-blockieren den Lauf. CRLF und LF erhalten dieselbe Prüfsumme. SQL-Dateien dürfen
-keine eigenen COMMIT/ROLLBACK-Kommandos und keine nichttransaktionalen Operationen
-wie `CREATE INDEX CONCURRENTLY` enthalten; solche Änderungen brauchen einen
-gesondert entworfenen Ablauf.
+[`backend/migrations/001_initial.sql`](backend/migrations/001_initial.sql) definiert das Ausgangsschema. Weitere Migrationen heißen `002_<name>.sql`, `003_<name>.sql` usw.
 
-Compose mountet keine Init-SQL-Dateien mehr in PostgreSQL. Dadurch laufen
-Erstinstallation und spätere Updates über denselben Runner; die frühere
-Beschränkung von `/docker-entrypoint-initdb.d/` auf leere Volumes entfällt.
+- Angewendete Dateien nicht ändern, umbenennen oder löschen.
+- Neue Dateien in aufsteigender Reihenfolge ergänzen.
+- Keine eigenen `COMMIT`-/`ROLLBACK`-Kommandos verwenden.
+- Nichttransaktionale Operationen wie `CREATE INDEX CONCURRENTLY` benötigen einen gesonderten Ablauf.
 
-## Backup, Restore und Rollback
+### Ausführung
 
-Ein PostgreSQL-Dump ist die Sicherung; ein Git-Checkout enthält keine persönlichen
-Daten. Sicherungen enthalten außerdem Google-Tokens und Sitzungshashes und
-gehören geschützt beziehungsweise verschlüsselt abgelegt. Regelmäßig eine
-Wiederherstellung in eine getrennte Datenbank testen. Lokale Entwicklung und
-spätere Produktion haben getrennte Datenbestände. Ein Umzug erfolgt bei Bedarf
-bewusst durch Dump/Restore, nicht durch Git oder das Kopieren eines laufenden Volumes.
+Erstinstallation und Updates verwenden `app.migrate`.
 
-Manuelles Backup auf dem Linux-Docker-Host, im Projektordner:
+- `schema_version` speichert Nummer, Dateiname, SHA-256-Prüfsumme und Zeitpunkt.
+- Eine PostgreSQL-Advisory-Lock verhindert gleichzeitige Migrationsläufe.
+- Jede Datei und ihr Versionsvermerk werden gemeinsam in einer Transaktion ausgeführt.
+- Bei einem Fehler wird diese Transaktion zurückgerollt; abgeschlossene Migrationen bleiben bestehen.
+- Fehlende oder veränderte Dateien sowie eine zum Code neuere Datenbank blockieren den Lauf.
+- LF und CRLF ergeben dieselbe Prüfsumme.
+
+Eine vollständige, unversionierte Entwicklungsdatenbank kann ohne Löschen der Inhalte übernommen werden. Fehlende benötigte Spalten verhindern die Übernahme.
+
+## Backup und Wiederherstellung
+
+Ein PostgreSQL-Dump enthält die Anwendungsdaten einschließlich Google-Tokens, Sitzungshashes und Migrationshistorie. Sicherungen geschützt ablegen und regelmäßig eine Wiederherstellung in einer getrennten Datenbank prüfen.
+
+Lokale Entwicklung und Docker-Betrieb haben getrennte Datenbestände. Ein Datentransfer erfolgt über Dump und Restore.
+
+### Backup unter Linux
+
+Im Projektordner:
 
 ```bash
 mkdir -p backups
@@ -367,56 +480,66 @@ docker compose --env-file .env.prod -f compose.prod.yaml exec -T db sh -c \
   'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > backups/hugo.dump
 ```
 
-Unter Windows das Binärformat nicht durch ältere PowerShell-Textumleitungen
-leiten. Stattdessen im Entwicklungscontainer erzeugen und danach kopieren:
+Je Sicherung einen eigenen Dateinamen verwenden. Das Update-Skript fügt einen Zeitstempel hinzu.
+
+### Backup unter Windows
+
+Den binären Dump im Container erzeugen und anschließend kopieren:
 
 ```powershell
 docker compose exec -T db pg_dump -U hugo -d hugo -Fc -f /tmp/hugo-backup.dump
 if ($LASTEXITCODE -ne 0) { throw 'Backup fehlgeschlagen' }
+
 $dbContainer = docker compose ps -q db
 New-Item -ItemType Directory -Force backups | Out-Null
 docker cp "${dbContainer}:/tmp/hugo-backup.dump" backups/hugo-backup.dump
 ```
 
-Erst nach erfolgreicher Sicherung aktualisieren. Dateinamen je Sicherung mit
-Datum versehen; das Update-Skript tut dies automatisch. Eine tägliche Sicherung
-um 02:00 per Cron und mindestens sieben Tage Aufbewahrung waren die ursprüngliche
-Betriebsplanung. Diese Automatisierung ist noch einzurichten; eine separate
-Aufbewahrungsregel darf ausschließlich das eigene Backup-Verzeichnis betreffen.
-Backups außerhalb des Docker-Hosts halten, Speicherplatz und Erfolg überwachen.
+Binäre Dumps nicht durch Textumleitungen älterer PowerShell-Versionen leiten.
 
-Restore zunächst in eine **neue** Datenbank, ohne die funktionierende zu löschen:
+### Aufbewahrung
+
+- Regelmäßige Backups zusätzlich zu Updates einplanen.
+- Sicherungen außerhalb des Docker-Hosts aufbewahren.
+- Speicherplatz und Sicherungserfolg überwachen.
+- Aufbewahrungsfrist festlegen und nur das eigene Backup-Verzeichnis bereinigen.
+
+### Wiederherstellung
+
+Zunächst eine neue Datenbank verwenden:
 
 ```bash
 docker compose --env-file .env.prod -f compose.prod.yaml exec -T db sh -c \
   'createdb -U "$POSTGRES_USER" hugo_restore'
+
 docker compose --env-file .env.prod -f compose.prod.yaml exec -T db sh -c \
   'pg_restore --exit-on-error --no-owner -U "$POSTGRES_USER" -d hugo_restore' < backups/hugo.dump
 ```
 
-Für Entwicklung entsprechend `docker compose` ohne Produktionsdatei nutzen.
-Unter Windows den Dump per `docker cp` in den Container kopieren und dort
-`pg_restore` mit Dateipfad ausführen. Anschließend passenden Code-Stand,
-Schema-Version und Daten prüfen; erst dann mit gestoppten Web-/Worker-Prozessen
-auf die restaurierte Datenbank umschalten. Die ursprüngliche Datenbank behalten,
-bis der Restore bestätigt ist. Der Dump enthält auch `schema_version`.
+Für die lokale Entwicklung `docker compose` ohne Produktionsdatei verwenden. Unter Windows den Dump mit `docker cp` in den Container kopieren und `pg_restore` dort mit Dateipfad aufrufen.
 
-Rollback bedeutet bei inkompatiblen Schemata: passender früherer Code-/Image-Stand
-**und** der vor dem Update gesicherte Datenstand. Nur ein altes Image zu starten
-ist kein verlässlicher Datenbank-Rollback. Zwischenzeitliche Änderungen müssen
-vor einer Wiederherstellung gesichert und gegebenenfalls separat übernommen werden.
+Vor dem Umschalten:
+
+1. Code-Stand, Schema-Version und Daten prüfen.
+2. Web und Worker stoppen.
+3. Verbindung auf die wiederhergestellte Datenbank umstellen.
+4. Die ursprüngliche Datenbank bis zur erfolgreichen Prüfung behalten.
+
+### Rollback
+
+Bei inkompatiblen Schemata benötigt ein Rollback den passenden Code-/Image-Stand und den Datenstand vor dem Update.
+
+Zwischenzeitliche Änderungen vor einer Wiederherstellung sichern und gegebenenfalls separat übernehmen.
 
 ## Reverse-Proxy und HTTPS
 
-Für Zugriff außerhalb des lokalen Rechners HTTPS vorsehen. Beispiel: nginx
-auf dem Docker-Host, Domain `hugo.example.com`, Backend an `127.0.0.1:8000`.
-Port 5432 nicht veröffentlichen. Firewall gegebenenfalls für SSH 22 und HTTP/HTTPS
-80/443 freigeben. Einen extern gebundenen Backend-Port nur für den Proxy erreichbar machen.
+Für externen Zugriff HTTPS verwenden. Das folgende nginx-Beispiel leitet HTTP-Anfragen an den lokalen Webserver weiter:
 
 ```nginx
 server {
     listen 80;
     server_name hugo.example.com;
+
     location / {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
@@ -428,324 +551,335 @@ server {
 }
 ```
 
-Auf Debian nginx sowie `certbot`/`python3-certbot-nginx` installieren, die
-Site aktivieren, `nginx -t` prüfen und beispielsweise `certbot --nginx -d
-hugo.example.com` für HTTPS verwenden. Das HTTP-Beispiel allein ist noch kein
-TLS-Setup. Danach `HUGO_COOKIE_SECURE=true` setzen und die Google-Callback-URL
-auf HTTPS umstellen. Uvicorn muss den tatsächlichen Proxy-Absender über
-`FORWARDED_ALLOW_IPS` kennen. Bei Host-nginx vor Docker kann das die Bridge-
-Gateway-IP statt `127.0.0.1` sein. Kein pauschales Vertrauen in fremde
-Forwarded-Header: falsches Schema/Host führt auch zu HTTP 403 bei Formularen.
-Ein `/ws`-Proxyblock ist derzeit nicht erforderlich, Hugo hat keine WebSockets.
+### TLS einrichten
 
-## Bedienung und Oberfläche
+1. nginx sowie `certbot` und `python3-certbot-nginx` installieren.
+2. Site aktivieren und mit `nginx -t` prüfen.
+3. Zertifikat einrichten:
 
-Die Oberfläche ist mit FastAPI/Jinja2 serverseitig gerendert, formbasiert und
-ohne AJAX, Frontend-Build oder externe CDN-Abhängigkeiten. `/ui` führt nach
-Anmeldung zu „Heute“. Inhaltliche Änderungen passieren über den Chat;
-die übrigen Ansichten dienen der Übersicht und gezielten Bestätigung.
+   ```bash
+   certbot --nginx -d hugo.example.com
+   ```
 
-| Ansicht | Funktionen |
-|---|---|
-| Chat `/ui/chat`, `/ui/chat/{id}` | Neue/fortgesetzte Unterhaltung, vollständiger Verlauf, 50 jüngste Unterhaltungen mit erster Nutzernachricht als Vorschau; Ladezustand „Hugo denkt nach …“; Entwurf bleibt bei Agentenfehler erhalten. POST leitet zur Unterhaltung weiter. |
-| Heute `/ui/heute` | Offene Vorschläge mit Grund, P1–P5, Vorhaben-Link, Datum und Hinweisen wie „heute“, „morgen“, „in N Tagen“, „seit N Tagen“. Bestätigen → `confirmed`, zurückstellen → `deferred`, verwerfen → `dismissed`. Zurückgestellte Vorschläge sind einklappbar. Letzter Evaluationslauf und „Jetzt auswerten“ sind sichtbar. |
-| Vorhaben `/ui/threads` | Gruppen Aktiv, Wartet, Idee; Erledigt/Archiviert einklappbar. Titel, nächster Schritt, Priorität, Ereigniszeitraum, „handeln bis“ und harte Deadline. |
-| Vorhaben-Detail `/ui/threads/{id}` | Beschreibung, Originalzeittext, Zeitfelder, Status/Priorität, Erstell-/Änderungszeit in Berlin und zugehörige Vorschläge; Aktionen erhalten das Rücksprungziel. |
-| Kalender `/ui/kalender` | Google-Verbindung herstellen/trennen, Kalenderstatus, vorgeschlagene Aktionen, Konflikte und vergangene Aktionen einsehen; Schreiben erst nach expliziter Bestätigung. |
+4. `HUGO_COOKIE_SECURE=true` setzen.
+5. Google-Callback-URL auf die HTTPS-Adresse umstellen.
 
-Das Abrufen offener Vorschläge markiert sie von `pending` nach `surfaced`.
-Bestätigung eines Vorschlags ist nicht automatisch die Genehmigung einer
-beliebigen externen Aktion. Kalender-Schreibaktionen besitzen einen eigenen
-Freigabeweg. Vorschläge werden nicht automatisch bei jedem Seitenaufruf erzeugt:
-dazu muss eine manuelle oder geplante Auswertung laufen.
+### Proxy-Vertrauen und Ports
 
-Minimal-JavaScript ergänzt Ladeanzeigen (`data-loading-text`), Bestätigungsdialoge
-(`data-confirm`), Scrollen ans Nachrichtenende, Enter-zum-Senden und
-Shift+Enter für Zeilenumbrüche. Ohne JS bleiben Formulare nutzbar; es fehlen
-Ladeanzeige, Bestätigungsdialog und Enter-Komfort. Die Unterhaltungsliste wird
-auf kleinen Bildschirmen eingeklappt. Keine obligatorische Rückfrage nach jeder Antwort.
+- `FORWARDED_ALLOW_IPS` auf die tatsächliche Proxy-IP oder dessen vertrauenswürdiges Netz setzen.
+- Bei nginx auf dem Docker-Host kann dies die Bridge-Gateway-IP sein.
+- Den Backend-Port nur für den Proxy erreichbar machen.
+- PostgreSQL-Port 5432 nicht extern veröffentlichen.
+- Falsche Host-/Protokollangaben können bei Formularen HTTP 403 auslösen.
 
-Responsive CSS: Chat-Sidebar am Desktop, einspaltig bis 760 px, begrenzte
-Nachrichtenbreite, umbrechende Vorhaben-Metadaten. Light/Dark Mode folgt
-`prefers-color-scheme`. Semantische Elemente, ARIA-Labels/-Navigation,
-`aria-live`, unsichtbare Feldbeschriftungen und Text zusätzlich zu Farben
-unterstützen Tastatur- und Screenreader-Nutzung. Hohe Prioritäten ab P4 und
-überfällige Daten werden hervorgehoben; Details nutzen unter anderem `<dl>`
-und `<details>`. Die Listen haben begrenzte Ergebnismengen, aber keine vollständige
-Blätterfunktion. Einklappen ist keine serverseitige Lazy-Loading-Funktion.
-
-Designfarben aus `style.css`: Hell Hintergrund `#f6f7f9`, Fläche `#ffffff`,
-Text `#1c1e21`, Akzent `#2563eb`, Gefahr `#b91c1c`, OK `#15803d`, Warnung
-`#b45309`; dunkel Hintergrund `#14171b`, Fläche `#1d2127`, Text `#e5e7eb`.
-CSS ist eine lokale Datei, nicht inline; Browser laden ein kleines zusätzliches JS.
+Hugo verwendet keine WebSockets.
 
 ## Architektur und Datenmodell
 
-Stack: Python/FastAPI, OpenAI Responses API (`gpt-5-mini`), PostgreSQL 17
-(`pgvector/pgvector:pg17`), psycopg/pgvector.psycopg, Jinja2, APScheduler 3.10.4.
-Lokale normalisierte Embeddings: `intfloat/multilingual-e5-small`, 384 Dimensionen,
-`query:`-/`passage:`-Präfixe, HNSW mit Cosinus-Abstand. Modelle werden beim ersten
-Bedarf geladen/heruntergeladen und danach pro Prozess gehalten; der gemeinsame
-Docker-Cache vermeidet erneute Downloads, nicht den Speicherbedarf je Prozess.
+### Komponenten
 
-| Datei/Modul | Verantwortung |
+| Komponente | Technik |
 |---|---|
-| `backend/app/main.py` | FastAPI-JSON-Endpunkte, UI-/Static-Einbindung. |
-| `backend/app/chat_service.py` | Gemeinsamer Chatdienst für API und UI, Persistenz, Fehlerbehandlung. |
-| `backend/app/agent/assistant.py` | Zentraler Systemprompt und begrenzte Tool-Calling-Schleife. |
-| `backend/app/agent/evaluation.py` | Proaktivitätsbewertung über dieselbe Schleife, eingeschränkte Werkzeuge. |
-| `backend/app/storage/` | Datenbank, Embeddings, Erinnerungen, Vorhaben, Vorschläge, Google-Tokens, Kalenderaktionen, Auth-Sitzungen. |
-| `backend/app/tools/dates.py` | Berlin-Zeitkontext und zuverlässige Datumsarithmetik (`compute_date`). |
-| `backend/app/calendar/` | Google-REST/OAuth-Client, reine Zeit-/Konfliktlogik, freigegebene Ausführung. |
-| `backend/app/web/routes.py`, `formatting.py` | UI-Routen und deutsche Formatierung; dieselben Storage-/Service-Funktionen wie API, keine parallele Fachlogik. |
-| `backend/app/web/templates/` | `base`, `chat`, `heute`, `threads`, `thread_detail`, `thread_row`, `kalender`, `login`, `error`. |
-| `backend/app/web/static/` | `style.css`, `app.js`, ausgeliefert unter `/static`. |
-| `backend/app/auth.py`, `passwords.py` | Gemeinsame Zugriffsschranke, Login/Logout, Hash-Erzeugung. |
-| `backend/app/config.py`, `dev.py` | Gemeinsame Konfiguration und lokaler Start. |
-| `backend/app/migrate.py`, `backend/migrations/` | Versionierter, transaktionaler Schemalauf und konsolidierte Ausgangsbasis. |
-| `backend/app/worker.py` | Separater täglicher Auswertungslauf, ein Job je Prozess, keine konkurrierenden Instanzen desselben Jobs. |
-| `Dockerfile`, `.dockerignore`, `compose*.yaml` | Gemeinsames Image sowie getrennte lokale/Host-Konfiguration. |
+| Backend | Python, FastAPI |
+| Modellzugriff | OpenAI Responses API, `gpt-5-mini` |
+| Datenbank | PostgreSQL 17, pgvector, psycopg |
+| Oberfläche | Jinja2, lokale CSS-/JavaScript-Dateien |
+| Scheduling | APScheduler |
+| Embeddings | `intfloat/multilingual-e5-small`, 384 Dimensionen |
 
-`conversations` und `messages` speichern Unterhaltungen und Nachrichten.
-`memories` enthält Inhalt, Kategorie, Status `proposed`/`confirmed`/`outdated`,
-Gültigkeit, Quellnachricht, Zeitstempel und Vektor. Exakte Duplikate werden
-unterdrückt; `update_memory` aktualisiert bisher nur `proposed`-Erinnerungen.
+Embeddings sind normalisiert und verwenden `query:`-/`passage:`-Präfixe. Die Suche nutzt HNSW-Indizes mit Cosinus-Abstand.
 
-`threads`: Titel, Beschreibung, Status `proposed`/`active`/`waiting`/`completed`/
-`archived`, Priorität, nächster Schritt und Zeitstempel. `thread_memories` und
-`thread_messages` verknüpfen Wissen und Quellnachrichten. Die fünf Agentenwerkzeuge
-`search_threads`, `list_threads`, `get_thread`, `create_thread`, `update_thread`
-verwenden gezielt IDs aus vorherigem Suchen/Lesen; Updates verändern nur
-explizit mitgegebene Felder. Ideen werden `proposed`, konkrete Vorhaben `active`.
+Das Modell wird bei Bedarf geladen und pro Prozess gehalten. Der Docker-Modellcache vermeidet wiederholte Downloads; Web und Worker benötigen jeweils eigenen Arbeitsspeicher.
 
-Zeitfelder unterscheiden:
+### Zentrale Module
 
-- `event_start`/`event_end`: DATE für Punkt oder inklusiven Zeitraum; Ende braucht
-  Anfang und darf nicht davor liegen.
-- `time_precision`: `exact` oder `approximate`; `time_text` bewahrt die ursprüngliche Angabe.
-- `deadline`: TIMESTAMPTZ für eine vom Nutzer genannte harte Frist, nie aus vagen Angaben erfunden.
-- `act_by`: DATE für Hugos Handlungsempfehlung beziehungsweise Vorlauf.
+Die Pfade beziehen sich auf `backend/app/`.
 
-Offene Vorhaben werden nach `COALESCE(act_by, event_start, deadline)` geordnet.
-Datumsarithmetik unterstützt Tage/Wochen/Monate/Jahre, Monatsenden und Schaltjahre.
-Aktuelle Uhrzeit, Datum und deutscher Wochentag in Europe/Berlin werden bei jedem
-Agentenaufruf injiziert. Fehlende Referenzdaten führen bei relativen Änderungen
-zu einer gezielten Rückfrage. Naive Deadline-Datetimes werden bislang als UTC
-interpretiert; gesetzte Datumsfelder lassen sich über das Tool nicht auf null löschen.
+| Modul | Verantwortung |
+|---|---|
+| `main.py` | JSON-Endpunkte und Einbindung der Oberfläche |
+| `chat_service.py` | Gemeinsame Chatlogik für API und UI |
+| `agent/assistant.py` | Systemprompt und begrenzte Tool-Calling-Schleife |
+| `agent/evaluation.py` | Proaktive Auswertung über dieselbe Schleife |
+| `calendar/` | OAuth, Google-REST-API, Konfliktprüfung und freigegebene Ausführung |
+| `storage/` | Persistenz und semantische Suche |
+| `tools/dates.py` | Zeitkontext und Datumsarithmetik |
+| `web/routes.py` | UI-Routen |
+| `web/formatting.py` | Deutsche Datums- und Statusdarstellung |
+| `auth.py`, `passwords.py` | Zugriffsschutz, Anmeldung und Passwort-Hash |
+| `config.py`, `dev.py` | Konfiguration und lokaler Start |
+| `migrate.py` | Versionierte Schemaänderungen |
+| `worker.py` | Geplante Auswertungen |
 
-`evaluation_runs` protokolliert `manual`/`scheduled`, `running`/`completed`/
-`failed`, berücksichtigte Vorhaben, neue Vorschläge, Fehler und Laufzeiten.
-`suggestions` enthält Vorhaben-/Laufbezug, Text, Grund, Priorität 1–5,
-Handlungsdatum, Zustellung `pending`/`surfaced` und Bearbeitung
-`open`/`confirmed`/`deferred`/`dismissed`. Die Auswertung betrachtet offene
-Vorhaben, jüngste Erinnerungen und offene/zurückgestellte Vorschläge. Sie nutzt
-lesende Werkzeuge plus `create_suggestion`, keinen zweiten Agenten. Exakt
-normalisierte Inhalte werden pro Vorhaben über Läufe und Bearbeitungsstatus hinweg
-dedupliziert. Umformulierungen können dennoch erneut erscheinen.
+UI und JSON-API verwenden dieselben Fach- und Speicherfunktionen.
 
-Kalender: Google Calendar ist die Quelle tatsächlicher Termine, Hugos Vorhaben
-bilden die getrennte Planungsebene. `google_credentials` hält genau eine
-OAuth-Verbindung, `google_oauth_states` die einmaligen States.
-`calendar_actions` speichert vorgeschlagene Create/Update/Delete-Aktionen mit
-Payload, Snapshot, Status `pending`/`confirmed`/`rejected`/`executed`/`failed`/
-`conflict`, Ergebnis/Fehler und Quellnachricht. `calendar_action_log` bewahrt
-die Historie auch für Löschungen. Access-/Refresh-Tokens bleiben in PostgreSQL
-und werden nicht ans Modell übergeben. Bestätigung erfolgt ausschließlich über
-die freigegebenen UI-/API-Wege. Konflikte verlangen erneute Bestätigung;
-deterministische Event-IDs verhindern doppelte Neuanlagen bei Wiederholung.
-Hugo-Termine erhalten `[H]` und einen Änderungsverlauf. Zeitzonen und Googles
-exklusive Enddaten ganztägiger Termine werden berücksichtigt; das ersetzt
-noch keine umfassenden Tests für alle Wiederholungs-/Abbruchfälle.
+### Unterhaltungen und Erinnerungen
 
-`auth_sessions` und `auth_login_limit` enthalten Sitzungshashes, Passwortversion,
-Ablauf und den gemeinsamen Anmeldezähler. `schema_version` enthält ausschließlich
-die Migrationshistorie. Frühere Dokumente erwähnten fälschlich Tabellen
-`suggestions_run_mapping` oder `calendar_sync_log`; diese gehören nicht zum Schema.
+| Tabelle | Inhalt |
+|---|---|
+| `conversations` | Unterhaltungen |
+| `messages` | Nachrichten und Rollen |
+| `memories` | Inhalt, Kategorie, Gültigkeit, Quelle, Zeitstempel und Embedding |
+
+Erinnerungen haben den Status `proposed`, `confirmed` oder `outdated`. Exakte Duplikate werden unterdrückt. `update_memory` verändert nur Erinnerungen mit Status `proposed`.
+
+### Vorhaben
+
+`threads` speichert Titel, Beschreibung, Priorität, nächsten Schritt und Zeitfelder.
+
+| Status | Bedeutung |
+|---|---|
+| `proposed` | Idee oder unverbindliche Überlegung |
+| `active` | Konkretes Vorhaben |
+| `waiting` | Wartend |
+| `completed` | Erledigt |
+| `archived` | Archiviert |
+
+`thread_memories` und `thread_messages` verknüpfen Vorhaben mit Wissen und Quellnachrichten.
+
+Die Agentenwerkzeuge `search_threads`, `list_threads`, `get_thread`, `create_thread` und `update_thread` verwenden IDs aus vorherigen Such- oder Leseaufrufen. Updates verändern nur ausdrücklich mitgegebene Felder.
+
+### Zeitplanung
+
+| Feld | Bedeutung |
+|---|---|
+| `event_start`, `event_end` | Ereignistag oder inklusiver Zeitraum |
+| `time_precision` | `exact` oder `approximate` |
+| `time_text` | Ursprüngliche Zeitangabe |
+| `deadline` | Vom Nutzer genannte harte Frist |
+| `act_by` | Hugos empfohlener Handlungstermin |
+
+Ein Ereignisende benötigt einen Anfang und darf nicht davor liegen. Offene Vorhaben werden nach `COALESCE(act_by, event_start, deadline)` geordnet.
+
+Jeder Agentenaufruf erhält Datum, Uhrzeit und deutschen Wochentag in Europe/Berlin. `compute_date` unterstützt Tage, Wochen, Monate und Jahre einschließlich Monatsenden und Schaltjahren.
+
+Fehlende Bezugspunkte bei relativen Zeitangaben führen zu einer Rückfrage. Datetimes ohne Zeitzone werden als UTC interpretiert. Gesetzte Datumsfelder lassen sich über das Tool nicht auf `null` setzen.
+
+### Proaktive Auswertung
+
+Die Auswertung berücksichtigt offene Vorhaben, jüngste Erinnerungen und offene oder zurückgestellte Vorschläge. Sie verwendet lesende Werkzeuge und `create_suggestion` über den zentralen Agenten.
+
+| Tabelle | Inhalt |
+|---|---|
+| `evaluation_runs` | Auslöser, Status, betrachtete Vorhaben, Vorschlagszahl, Fehler und Laufzeiten |
+| `suggestions` | Text, Grund, Priorität 1–5, Datum sowie Vorhaben- und Laufbezug |
+
+| Zustand | Werte |
+|---|---|
+| Auslöser | `manual`, `scheduled` |
+| Auswertung | `running`, `completed`, `failed` |
+| Zustellung | `pending`, `surfaced` |
+| Bearbeitung | `open`, `confirmed`, `deferred`, `dismissed` |
+
+Exakt normalisierte Vorschläge werden pro Vorhaben über Auswertungsläufe und Bearbeitungsstatus hinweg dedupliziert. Umformulierungen können erneut erscheinen.
+
+### Kalender und Freigaben
+
+Google Calendar verwaltet tatsächliche Termine. Hugos Vorhaben bilden die interne Planungsebene.
+
+| Tabelle | Inhalt |
+|---|---|
+| `google_credentials` | OAuth-Zugang eines Google-Kontos |
+| `google_oauth_states` | Einmalige OAuth-States |
+| `calendar_actions` | Vorgeschlagene Aktionen, Payload, Snapshot und Ergebnis |
+| `calendar_action_log` | Aktionshistorie einschließlich Löschungen |
+
+Kalenderaktionen haben den Status `pending`, `confirmed`, `rejected`, `executed`, `failed` oder `conflict`.
+
+- Erstellen, Ändern und Löschen benötigen eine ausdrückliche UI-/API-Freigabe.
+- Konflikte verlangen eine erneute Bestätigung.
+- Deterministische Event-IDs vermeiden doppelte Neuanlagen bei Wiederholung.
+- Hugo-Termine erhalten `[H]` und einen Änderungsverlauf.
+- Zeitzonen und exklusive Enddaten ganztägiger Google-Termine werden berücksichtigt.
+- Access- und Refresh-Tokens bleiben in PostgreSQL und werden nicht an das Modell übergeben.
+
+### Sitzungen und Schema
+
+| Tabelle | Inhalt |
+|---|---|
+| `auth_sessions` | Sitzungshashes, Passwortversion und Ablauf |
+| `auth_login_limit` | Gemeinsamer Anmeldezähler |
+| `schema_version` | Migrationshistorie |
 
 ## API
 
-Nach Anmeldung: `/docs` (Swagger), `/redoc`, `/openapi.json`. UI-Routen sind mit
-`include_in_schema=False` ausgeblendet. Die UI ruft gemeinsame Python-Dienste auf,
-nicht intern die JSON-HTTP-API. Die bestehenden fachlichen APIs bleiben erhalten.
+Nach der Anmeldung stehen `/docs`, `/redoc` und `/openapi.json` zur Verfügung. Die serverseitigen UI-Routen sind nicht im OpenAPI-Schema enthalten.
 
-| Methode/Route | Zweck |
+### Anwendung und Wissen
+
+| Methode | Route | Zweck |
+|---|---|---|
+| GET | `/` | Name, Version und Status |
+| GET | `/health` | Öffentlicher Prozesscheck |
+| POST | `/chat` | Nachricht und optionale `conversation_id` |
+| GET | `/conversations` | Jüngste Unterhaltungen |
+| GET | `/conversations/{id}/messages` | Nachrichten einer Unterhaltung |
+| GET | `/memories` | Erinnerungen anzeigen |
+| GET | `/threads` | Vorhaben; optionaler `status`-Filter |
+
+### Auswertung und Vorschläge
+
+| Methode | Route | Zweck |
+|---|---|---|
+| POST | `/proactivity/evaluate` | Manuelle Auswertung |
+| GET | `/proactivity/runs` | Auswertungsprotokoll |
+| GET | `/suggestions` | Vorschläge mit `status`-/`delivery`-Filter |
+| PATCH | `/suggestions/{id}` | Bestätigen, zurückstellen oder verwerfen |
+
+Zurückgegebene ausstehende Vorschläge werden als `surfaced` markiert.
+
+### Kalender
+
+| Methode | Route | Zweck |
+|---|---|---|
+| GET | `/calendar/status` | Konfiguration und Verbindungsstatus |
+| GET | `/calendar/actions` | Aktionen; optionaler `status`-Filter |
+| POST | `/calendar/actions/{id}/confirm` | Freigabe und Ausführung; optional `force` |
+| POST | `/calendar/actions/{id}/reject` | Aktion ablehnen |
+| POST | `/calendar/disconnect` | Google-Verbindung trennen |
+
+### UI- und OAuth-Routen
+
+| Methode | Routen |
 |---|---|
-| `GET /` | Name, Version und Status als JSON, geschützt. |
-| `GET /health` | Öffentlicher Prozesscheck. |
-| `POST /chat` | `message` und optionale `conversation_id`; persistiert und ruft Agenten. |
-| `GET /conversations` | Jüngste Unterhaltungen mit Vorschau. |
-| `GET /conversations/{id}/messages` | Nachrichten einer Unterhaltung. |
-| `GET /memories` | Lesende Entwicklungs-/Inspektionsansicht. |
-| `GET /threads` | Vorhaben, optionaler `status`-Filter. |
-| `POST /proactivity/evaluate` | Manueller Auswertungslauf. |
-| `GET /proactivity/runs` | Audit der Auswertungen. |
-| `GET /suggestions` | `status`-/`delivery`-Filter; zurückgegebene ausstehende Vorschläge werden `surfaced`. |
-| `PATCH /suggestions/{id}` | `confirmed`, `deferred` oder `dismissed`. |
-| `GET /calendar/status` | Konfiguration/Verbindung, gegebenenfalls Kalenderliste ohne Tokens. |
-| `GET /calendar/actions` | Aktionen, optional `status`. |
-| `POST /calendar/actions/{id}/confirm` | Explizite Freigabe und Ausführung; optional `force` nach geprüftem Konflikt. |
-| `POST /calendar/actions/{id}/reject` | Aktion ablehnen. |
-| `POST /calendar/disconnect` | Google-Verbindung trennen. |
+| POST | `/ui/login`, `/ui/logout`, `/ui/chat`, `/ui/evaluate` |
+| POST | `/ui/suggestions/{id}`, `/ui/calendar-actions/{id}` |
+| POST | `/ui/kalender/disconnect` |
+| GET | `/ui/kalender/auth/start`, `/ui/kalender/auth/callback` |
 
-UI-POSTs: `/ui/chat`, `/ui/evaluate`, `/ui/suggestions/{id}`,
-`/ui/calendar-actions/{id}`, `/ui/kalender/disconnect`, `/ui/login`, `/ui/logout`.
-OAuth-GETs: `/ui/kalender/auth/start` und `/ui/kalender/auth/callback`.
-Ungültige Filter/Aktionen ergeben 400, fehlende Objekte 404, Kalenderkonflikte 409,
-externe Servicefehler gegebenenfalls 502. Ohne API-Sitzung 401; UI leitet zur
-Anmeldung. Fehler beim Datenbankzugriff werden ohne Zugangsdaten ausgegeben.
+### Fehler und Begrenzungen
 
-Die meisten JSON-Listen begrenzen `limit` auf 1–500. API-Exporte für Erinnerungen
-und Vorhaben sind damit möglich, aber kein vollständiges Backup großer Bestände;
-`limit=1000` umgeht diese Grenze nicht. Für vollständige Sicherungen `pg_dump` nutzen.
+| HTTP-Status | Bedeutung |
+|---|---|
+| 400 | Ungültiger Filter oder ungültige Aktion |
+| 401 | Fehlende API-Sitzung |
+| 403 | Ungültiger Anfrage-Ursprung |
+| 404 | Objekt nicht gefunden |
+| 409 | Kalenderkonflikt oder bereits behandelte Aktion |
+| 429 | Anmeldelimit erreicht |
+| 502 | Externer Servicefehler |
+| 503 | Anmeldung nicht eingerichtet oder Dienst nicht verfügbar |
+
+Die Oberfläche leitet bei fehlender Sitzung zur Anmeldung weiter.
+
+Die meisten JSON-Listen begrenzen `limit` auf 1–500. Für vollständige Datensicherungen `pg_dump` verwenden.
 
 ## Tests und Diagnose
 
-Testabhängigkeiten: `python -m pip install -r backend/requirements-dev.txt`.
-`python -m pytest` findet über `pyproject.toml` ausschließlich `tests/` und setzt
-den Importpfad auf `backend`. Diagnosewerkzeuge werden dabei nicht ausgeführt.
+### Automatisierte Tests
 
 Im Projektordner:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/ -q
+.\.venv\Scripts\python.exe -m pip install -r backend/requirements-dev.txt
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Tests setzen einen Dummy-OpenAI-Key, rufen aber kein echtes Modell auf, sofern
-Storage/Agent gemockt werden. Web-/Tool-/Datums-/Evaluations-Tests benötigen keine
-OpenAI-Verbindung. Datenbanktests überspringen sich ohne PostgreSQL; semantische
-Storage-Tests können das lokale Embedding-Modell beim ersten Lauf herunterladen.
-Nicht gegen eine produktive Datenbank testen. Auth-Tests arbeiten in temporären
-Schemas, Migrationstests in eigens angelegten Datenbanken; dafür braucht der
-Testnutzer CREATE-DATABASE-Rechte. Testobjekte werden anschließend entfernt.
+`pyproject.toml` begrenzt die Tests auf `tests/` und setzt den Importpfad auf `backend`. Manuelle Diagnosewerkzeuge werden nicht ausgeführt.
 
-Gezielt Start/Update/Auth prüfen:
+| Testbereich | Voraussetzungen |
+|---|---|
+| Web, Agentenwerkzeuge, Datumslogik, Auswertung | Gemockte Dienste, kein OpenAI-Zugriff |
+| Auth-Speicherung | PostgreSQL; temporäre Schemas |
+| Migrationen | PostgreSQL; Berechtigung zum Erstellen von Testdatenbanken |
+| Vorhaben und Vorschläge | Konfigurierte Testdatenbank; gegebenenfalls Embedding-Download |
+| Docker | Gebautes Image und ausdrücklich aktivierter Smoke-Test |
+
+Datenbanktests werden ohne erreichbares PostgreSQL übersprungen. Tests nicht gegen eine produktive Datenbank ausführen.
+
+Gezielt Start, Migration und Anmeldung prüfen:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/test_migrations.py tests/test_config.py tests/test_worker.py tests/test_auth.py tests/test_auth_storage.py tests/test_web.py -q
+.\.venv\Scripts\python.exe -m pytest -q tests/test_migrations.py tests/test_config.py tests/test_worker.py tests/test_auth.py tests/test_auth_storage.py tests/test_web.py
 ```
 
-Migrationstests prüfen leere DB, Übernahme vorhandener Daten, wiederholte und
-parallele Läufe, Prüfsummen, ältere Checkouts, CRLF/LF und atomaren Fehler-Rollback.
-Auth-Tests prüfen echte HTTP-Routen mit PostgreSQL, Sitzungsablauf, Wiederverwendung,
-Widerruf und paralleles Versuchslimit; Testpasswörter gelten nur im Test.
+### Docker-Smoke-Test
 
-Verifiziert am 06.11.2026: **95 Tests bestanden**, einschließlich des optionalen
-Docker-Tests (`HUGO_DOCKER_SMOKE=1`, zuvor `docker build -t hugo:local .`).
-Dieser startet ein isoliertes Compose-Projekt mit Testzugängen, prüft Anmeldung,
-Modellcache-Schreibrechte und ausgehenden Worker-Zugriff sowie Sitzungserhalt nach
-Migration und Neuerstellen der Container. Seine Testvolumes werden danach entfernt.
-Die lokale Datenbank wurde vor der Übernahme gesichert; alle Inhalte der 14
-Anwendungstabellen waren danach unverändert. Auch `app.dev` wurde mit echter
-Migration und HTTP-Healthcheck gestartet; der bestehende Entwicklungsserver
-antwortet weiterhin auf Port 8000. Proxmox, der vollständige Git-Pull-
-Updateablauf und echte Google-/OpenAI-Aufrufe waren nicht Teil dieses Tests.
+```powershell
+docker build -t hugo:local .
+$env:HUGO_DOCKER_SMOKE = '1'
+.\.venv\Scripts\python.exe -m pytest tests/test_docker_smoke.py -q
+Remove-Item Env:HUGO_DOCKER_SMOKE
+```
 
-Anschließende Strukturprüfung: 129 Tests bestanden, der optionale Docker-Test
-übersprungen. Die beiden bestehenden Integrationsmodule `test_thread_storage.py`
-und `test_suggestions.py` wurden dabei ausdrücklich ausgeschlossen, da sie die
-konfigurierte Datenbank verwenden. Manuelle Skripte wurden auf nebenwirkungsfreien
-Import geprüft; echte Kalenderabfragen und Modell-Downloads wurden nicht ausgelöst.
-Das bereinigte Docker-Image wurde erfolgreich gebaut und ohne Netzwerk geprüft:
-Anwendung importierbar, Migration enthalten, `pytest` nicht installiert.
+Der Test verwendet ein isoliertes Compose-Projekt mit Testzugängen und prüft:
 
-| Problem | Prüfung / Abhilfe |
+- Start und Anmeldung
+- Schreibrechte im Modellcache
+- Ausgehenden Worker-Zugriff
+- Sitzungserhalt nach Migration und Neuerstellen der Container
+
+Die Testvolumes werden anschließend entfernt.
+
+### Manuelle Diagnosewerkzeuge
+
+Mit aktivierter virtueller Umgebung im Projektordner:
+
+```bash
+python scripts/check_embeddings.py
+python scripts/check_google_calendar.py
+```
+
+| Skript | Verhalten |
 |---|---|
-| Login hängt | DB läuft? `DATABASE_URL` lokal auf `127.0.0.1`; Docker nutzt Service `db`. Verbindungstimeout und Logs prüfen. |
-| Zurück auf Login nach korrektem Passwort | Bei lokalem HTTP Secure-Cookie deaktivieren; nicht zwischen `localhost` und `127.0.0.1` wechseln. |
-| HTTP 403 nach Proxy | Host/Origin und `X-Forwarded-Proto`, vertrauenswürdige Proxy-IP prüfen. |
-| HTTP 503 / Anmeldung nicht eingerichtet | Gültigen Hash konfigurieren; vollständigen Prozessneustart statt nur Datei-Reload. |
-| Alte Env-Werte bleiben | Neues Terminal; Prozessvariablen haben Vorrang. Docker `up` statt bloß `restart` bei Env-Änderung. |
-| Port 8000 belegt | Alten eigenen Server beenden oder lokal `--port`, in Docker `WEB_PORT` ändern. |
-| Migration fehlgeschlagen | `migrate`-Logs und Exitcode prüfen. Keine Historienzeilen löschen, um Prüfsummenfehler zu übergehen. |
-| Kein Vorschlag | Manuell „Jetzt auswerten“ oder Worker starten; `SCHEDULER_HOUR/MINUTE` sind UTC. Fehlgeschlagene Läufe stehen in `evaluation_runs`. |
-| Worker ohne API-Zugriff | Ausgehendes Netz und API-Key prüfen; genau einen Worker betreiben. |
-| Langsamer erster Start | Python-/Torch-Import und initialer Modell-Download können dauern. Docker-Cache und RAM prüfen. |
-| Chat leer/unvollständig | Modellstatus und Tokenverbrauch prüfen; `gpt-5-mini` kann das Ausgabelimit für Reasoning verbrauchen. Low reasoning und Diagnose beibehalten. |
-| Datenbank/Platte voll | Dump sichern, tatsächliche DB-/Volume-/Log-Größen prüfen, gegebenenfalls `vacuumdb`; nicht vorschnell Volume löschen. |
+| `check_embeddings.py` | Vergleicht Beispielsätze im Speicher; keine Datenbankeinträge |
+| `check_google_calendar.py` | Liest `credentials.json`, schreibt `token.json` und listet Termintitel |
 
-Docker-Diagnose: `ps -a`, `logs --since 24h web worker db migrate`, `/health`,
-anschließend eine echte Anmeldung. Logs und Tokenverbrauch auswerten, keine
-Schlüssel/Tokens protokollieren. Support: [GitHub Issues](https://github.com/jhohmann/hugo/issues).
+Der Embedding-Test kann das Modell herunterladen. Das Google-Skript benötigt separat `google-auth-oauthlib` und `google-api-python-client`. Die Anwendung selbst verwendet den OAuth-Weg unter `/ui/kalender`.
 
-## Grenzen und Roadmap
+### Häufige Probleme
 
-Bereits vorhanden: zentraler Agent, Erinnerungen/Vorhaben, Zeitkontext,
-manuelle und geplante Auswertung, serverseitige Oberfläche, Google-Kalendercode,
-Passwort-Anmeldung. Das ist noch kein Beweis für zuverlässige unbeaufsichtigte
-Assistenz oder ein geprüftes Proxmox-Deployment.
-
-Weiter offen, in Produktpriorität:
-
-1. Zeitplanung: Abhängigkeiten zwischen Vorhaben, Blocker/Wartegründe, nächster
-   Prüftermin, Quellen/Vertrauen von Zeitangaben, sinnvolle Vorbereitungsfenster.
-2. Proaktivität: reale tägliche Läufe und nützliche Interventionen beobachten,
-   semantische Wiederholungen/dismissed-Themen besser unterdrücken, Benachrichtigungs-
-   ermüdung vermeiden. Zustellkanal noch entscheiden: Digest beim nächsten Chat
-   oder Push. Kein E-Mail-Lesen gewünscht.
-3. Kalender: Integration und Konfliktprüfung umfassender testen, Verfügbarkeit
-   gezielt in Auswertungen einbeziehen; Wiederholungen, Zeitzonen, ganztägige und
-   abgesagte Termine prüfen. Interne Planung bleibt getrennt von echten Terminen.
-4. Aktionen: bestehende Kalender-Freigaben zu einem nachvollziehbaren allgemeinen
-   Vorschlags-/Genehmigungs-/Ausführungssystem ausbauen, idempotent und auditierbar.
-5. Betrieb: erster Proxmox-Smoke-Test, TLS/Proxy, Backup-Restore und Update-Rollback,
-   Monitoring/Alarmierung und API-Verbrauch prüfen. Aggregierte Logs (z.B. Loki/ELK),
-   Prometheus/Grafana, verschlüsselte externe Backups (z.B. S3/Backblaze) und
-   systemd/E-Mail-Alarme sind mögliche spätere Ergänzungen, noch nicht eingerichtet.
-
-Ein Nutzer und ein Worker; keine getestete Hochverfügbarkeit, Load-Balancer-
-Installation, Multi-Tenancy oder getrennten Arbeits-/Privatkonten. Work/private
-Trennung ist langfristig erwünscht. Keine CI/CD-Pipeline, Registry oder Kubernetes
-erforderlich, solange kein konkreter Bedarf besteht. Image-Größe, Build-Cache
-und Kaltstart sind später optimierbar. Aktuell werden viele Paketversionen nicht
-fest gepinnt; ein Rebuild ist deshalb kein bitgenau reproduzierbarer Release.
-
-Weitere bekannte Grenzen: Datumsfelder nicht auf null löschbar, Erinnerungsupdates
-nur für `proposed`, semantische Duplikate/Konflikte, fehlende automatische
-Gesprächstitel, begrenzte Listen ohne Paging, kein Push/Realtime. Optionale UI-Ideen
-aus der frühen Planung: Titel, Editor für Beschreibungen, Export/Druck; sie sind
-gegen die Priorität proaktiver Hilfe abzuwägen, keine zugesagten nächsten Features.
-
-API-Kosten hängen von Nutzung, Modell und Kontext ab; die alte Schätzung
-„unter 1 USD/Monat“ war nicht gemessen und ist keine Zusage. Relevanter Kontext
-verlässt bei Modellaufrufen das lokale System. Datenschutz-/Aufbewahrungsanforderungen
-und Anbieterbedingungen sind für die eigenen Daten zu prüfen; diese Dokumentation
-stellt keine Datenschutz- oder Compliance-Zusage dar.
-
-## Entwicklungsgeschichte und Dokumentationskonsolidierung
-
-| Zeitpunkt | Ergebnis / aufbewahrtes Wissen |
+| Problem | Prüfung |
 |---|---|
-| 02.–03.11.2026 | Persistenter Chat, zentrale modellgesteuerte Memory-Tools. Norwegen-Monatsänderung aktualisierte dieselbe Erinnerung. Eine separate Memory-Agent-Pipeline ordnete unterschiedliche Reisen falsch zu; nicht wieder einführen. |
-| 03.11.2026, Vorhaben | Idee wurde `proposed`, Entscheidung aktualisierte denselben Thread auf `active` mit nächstem Schritt; neue Unterhaltung fand ihn wieder. Unabhängiges Motorradthema änderte nur die passende Erinnerung. |
-| 03.11.2026, Zeit | „15. März“ → 15.03.2027 plus zwei Wochen; „Mitte August nächstes Jahr“ → 10.–20.08.2027, approximate und Originaltext; relative Verschiebung Juni→September 2027. Keine erfundene harte Deadline. |
-| 03.11.2026, Konsistenz | `gpt-5-mini` suchte bei storeübergreifenden Änderungen gelegentlich nur Threads oder nur Erinnerungen. Prompt verlangt für Zukunftsthemen beide Suchen; bei erneuter Flakiness stärkeres Modell/höheres Reasoning evaluieren. |
-| 03.11.2026, Auswertung | Deadline in 17 Tagen erzeugte konkrete Empfehlung; Werkstatttermin nur als Erinnerung wurde als Vorschlag ohne Thread sichtbar. Zweiter Lauf keine exakten Duplikate, auch nicht nach Dismiss. PATCH 400/404 geprüft. |
-| 03.11.2026, UI MVP 0.1 | Chat/Heute/Vorhaben und gemeinsame Services, echte DB mit Bestätigungs-Roundtrip und Entwurfserhalt ohne API-Key getestet. Historische Berichte nannten 90 Tests beziehungsweise einen Lauf mit 64 bestanden/27 übersprungen; unterschiedliche Teststände, keine aktuelle Gesamtaussage. |
-| 04.11.2026 | Audit und Vorbereitung von Dockerfile, Compose, Worker, Migrationen und Betriebsanleitungen. **Kein Deployment**. Frühere Aussagen „produktionsbereit“, „alle Services getestet“ oder „automatische Migration bei jedem DB-Start“ waren zu weitgehend. |
-| 06.11.2026, Auth | Zunächst 112 Tests bestanden, 29 DB-Tests übersprungen; danach 80 Auth-/Storage-/Webtests mit Docker-PostgreSQL ohne Skip bestanden. Lokale Anmeldung vom Nutzer bestätigt, HTTP-Cookies und IPv4-DB-Adresse korrigiert. |
-| 06.11.2026, Bereinigung | Ausgangsschema zusammengeführt, versionierter Updateweg, Startbedingungen und gemeinsame Konfiguration ergänzt, Dokumentation auf zwei Dateien vereinigt. Validierung dieses Schritts siehe Tests und Diagnose. |
+| Login hängt | Datenbank und Verbindungsadresse prüfen: lokal `127.0.0.1`, im Docker-Stack `db` |
+| Login führt erneut zur Anmeldung | Bei lokalem HTTP Secure-Cookie deaktivieren; Hostname beibehalten |
+| HTTP 403 hinter Proxy | Host, Origin, `X-Forwarded-Proto` und Proxy-Vertrauen prüfen |
+| HTTP 503 bei Anmeldung | Passwort-Hash prüfen und Webprozesse vollständig neu starten |
+| Env-Werte werden nicht übernommen | Prozessvariablen prüfen; Docker-Container mit `up` neu erstellen |
+| Port 8000 belegt | Server beenden oder `--port` beziehungsweise `WEB_PORT` verwenden |
+| Migration fehlgeschlagen | Logs und Exitcode prüfen; keine Historienzeilen löschen |
+| Keine Vorschläge | Auswertung auslösen, Worker und `evaluation_runs` prüfen |
+| Worker erreicht APIs nicht | Netzwerk und API-Schlüssel prüfen |
+| Erster Start dauert lange | Bibliotheksimporte, Modell-Download, Cache und RAM prüfen |
+| Chatantwort leer | Modellstatus und Tokenverbrauch prüfen |
+| Speicherplatz knapp | Daten-, Volume-, Backup- und Loggrößen prüfen |
 
-Übernommene Dokumente und Zielabschnitte:
+`gpt-5-mini` kann sein Ausgabelimit für Reasoning verbrauchen. Der Agent verwendet niedrigen Reasoning-Aufwand und diagnostiziert unvollständige oder leere Antworten.
 
-| Frühere Datei | Inhalt jetzt hier |
+Für Docker-Diagnosen `ps -a`, Service-Logs, `/health` und eine Anmeldung prüfen. Keine Schlüssel oder Sitzungstokens protokollieren.
+
+Fehlerberichte: [GitHub Issues](https://github.com/jhohmann/hugo/issues).
+
+## Grenzen und Weiterentwicklung
+
+### Grenzen
+
+- Ein Nutzer und ein Worker; keine getrennten Arbeits-/Privatkonten.
+- Erinnerungsupdates nur für den Status `proposed`.
+- Datumsfelder lassen sich über Agentenwerkzeuge nicht auf `null` setzen.
+- Semantisch ähnliche Vorschläge können trotz exakter Duplikatprüfung erneut erscheinen.
+- Begrenzte Listen ohne vollständige Seitennavigation.
+- Keine automatischen Gesprächstitel und keine Push-Benachrichtigungen.
+- Paketversionen sind teilweise nicht festgelegt; Builds sind nicht bitgenau reproduzierbar.
+- Proxmox-Betrieb, Wiederherstellung und externe Kalenderabläufe benötigen Prüfungen in der jeweiligen Zielumgebung.
+
+### Weiterentwicklung
+
+| Bereich | Themen |
 |---|---|
-| `QUICK_START.md` | Lokaler Start, erster Docker-Start, Konfiguration, Diagnose. |
-| `DEPLOYMENT.md` | Docker-Betrieb, Updates, Backup/Restore, Proxy, Monitoring, Grenzen. |
-| `PROD_COMPONENTS.md` | Architektur, Servicegraph, Healthchecks, Logging, Konfiguration. |
-| `AUDIT_PROD_READY.md` | Entwicklungsgeschichte, korrigierter Betriebsstand, offene Roadmap. |
-| `IMPLEMENTATION_SUMMARY.md` | Komponenten, Kompatibilität, Historie, weiterhin ungeprüfte Deployment-Schritte. |
-| `WEB_UI_DOCUMENTATION.md` | Bedienung, Gestaltung/Accessibility, Dateien, API, Tests und UI-Grenzen. |
-| `AUTHENTICATION.md` | Passwort, Sitzungsschutz, API-Zugriff, Konfiguration und Integrationstests. |
-| Bisherige technische Teile von `AGENTS.md` | Datenmodell, Agentenverhalten, Verifikation, Historie und Roadmap. |
+| Zeitplanung | Abhängigkeiten, Blocker, Wartegründe, Prüftermine und Vorbereitungsfenster |
+| Proaktivität | Relevante tägliche Hinweise, weniger Wiederholungen, geeignete Zustellkanäle |
+| Kalender | Verfügbarkeit in Auswertungen, Wiederholungen, ganztägige und abgesagte Termine |
+| Aktionen | Allgemeines Freigabe- und Ausführungssystem mit nachvollziehbarem Verlauf |
+| Betrieb | HTTPS, Backup-Restore, Update-Rollback, Monitoring und Verbrauchskontrolle |
 
-Widersprüche wurden in der aktuellen Anleitung berichtigt; historische
-Beobachtungen und offene Fragen bleiben gekennzeichnet erhalten. Frühere
-Dateilängen, die grobe 800-MB-Image-Schätzung und 10–20-Minuten-Installations-
-schätzungen waren keine Mess-/Qualitätsnachweise. Wiederholte Statuslisten sind
-zusammengeführt. Die Originale der bereits versionierten Dateien bleiben über
-Git-Historie (`git log -- DATEI`) nachvollziehbar.
+Arbeits-/Privattrennung ist ein mögliches Ausbauziel. E-Mail-Lesen ist nicht vorgesehen.
 
-Technische Referenzen: [Compose-Startreihenfolge](https://docs.docker.com/compose/how-tos/startup-order/),
-[Compose up](https://docs.docker.com/reference/cli/docker/compose/up/),
-[PostgreSQL Advisory Locks](https://www.postgresql.org/docs/17/explicit-locking.html#ADVISORY-LOCKS),
-[Python scrypt](https://docs.python.org/3/library/hashlib.html#hashlib.scrypt).
+API-Kosten hängen von Nutzung, Modell und Kontext ab. Bei Modellaufrufen wird relevanter Kontext an den Anbieter übertragen.
+
+## Technische Referenzen
+
+- [Compose-Startreihenfolge](https://docs.docker.com/compose/how-tos/startup-order/)
+- [Compose up](https://docs.docker.com/reference/cli/docker/compose/up/)
+- [PostgreSQL Advisory Locks](https://www.postgresql.org/docs/17/explicit-locking.html#ADVISORY-LOCKS)
+- [Python scrypt](https://docs.python.org/3/library/hashlib.html#hashlib.scrypt)
