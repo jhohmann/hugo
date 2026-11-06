@@ -353,6 +353,8 @@ In `.env.prod` eintragen:
 - `HUGO_DOMAIN` für den Caddy-Proxy (siehe [Reverse-Proxy und HTTPS](#reverse-proxy-und-https))
 - Bei Bedarf Google-OAuth-Konfiguration
 
+Bei späteren Updates ergänzt [`scripts/merge-env.sh`](scripts/merge-env.sh) neue Schlüssel aus der Vorlage in der bestehenden `.env.prod`, ohne vorhandene Werte zu ändern. Das Update-Skript ruft es automatisch auf.
+
 ### Start
 
 ```bash

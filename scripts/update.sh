@@ -7,6 +7,8 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
     exit 1
 fi
 git pull --ff-only
+# Neue Variablen aus der Vorlage übernehmen, ohne bestehende Werte zu ändern.
+bash scripts/merge-env.sh
 compose=(docker compose --env-file .env.prod -f compose.prod.yaml)
 "${compose[@]}" build web
 "${compose[@]}" up -d --wait db
