@@ -19,6 +19,8 @@
   {% endif %}
 
   <dl class="fact-list">
+    <dt>Bereich</dt>
+    <dd>{% for tag in thread.tags|default([]) %}{{ fmt.THREAD_TAG_LABELS[tag] }}{% if not loop.last %}, {% endif %}{% else %}Nicht zugeordnet{% endfor %}</dd>
     {% set event_text = fmt.event_range_text(thread) %}
     {% if event_text %}
     <dt>Ereignis</dt>
@@ -45,6 +47,23 @@
     {% if thread.next_action %}
     <dt>Nächster Schritt</dt>
     <dd>{{ thread.next_action }}</dd>
+    {% endif %}
+    {% if thread.blocked_reason %}
+    <dt>Blockiert</dt>
+    <dd>
+      <span class="status status-waiting">{{ thread.blocked_reason }}</span>
+    </dd>
+    {% endif %}
+    {% if thread.preparation_weeks %}
+    <dt>Vorbereitung</dt>
+    <dd>
+      {{ thread.preparation_weeks }} Woche{% if thread.preparation_weeks != 1 %}n{% endif %} vorher beginnen
+      {% if thread.event_start %}
+      <span class="muted">(Ereignis: {{ thread.event_start|de_date }})</span>
+      {% elif thread.act_by %}
+      <span class="muted">(Handeln bis: {{ thread.act_by|de_date }})</span>
+      {% endif %}
+    </dd>
     {% endif %}
     <dt>Angelegt</dt>
     <dd>{{ thread.created_at|de_datetime }}</dd>

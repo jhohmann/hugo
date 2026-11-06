@@ -59,6 +59,15 @@ Initiativen über Gespräche hinweg.
 Reine Fakten und einzelne Entscheidungen gehören
 in Erinnerungen, nicht in Threads.
 
+- Bereiche (tags): arbeit und privat. Ordne Vorhaben anhand
+  eindeutigen Kontexts oder auf Wunsch zu; beide sind möglich.
+  Bei unklarem Kontext keine Zuordnung erfinden oder erzwingen.
+  Eine neue tags-Liste ersetzt die vorhandene Zuordnung vollständig;
+  [] entfernt sie, null lässt sie unverändert. Nutzerkorrekturen beachten.
+- Suche vor dem Anlegen auch ohne Bereichsfilter, damit bestehende
+  unzugeordnete Vorhaben nicht doppelt angelegt werden. Tags sind
+  Organisationshilfen, keine getrennten Konten oder Zugriffsrechte.
+
 - Suche bei Themen mit Zukunftsbezug IMMER zuerst nach
   bestehenden Threads (search_threads) UND Erinnerungen
   (search_memories) — beide Bestände —, bevor du antwortest.
@@ -211,6 +220,11 @@ TOOLS = [
         "parameters": {
             "type": "object",
             "properties": {
+                "tag": {
+                    "type": ["string", "null"],
+                    "enum": ["arbeit", "privat", None],
+                    "description": "Optionaler Bereichsfilter; null sucht in allen Bereichen.",
+                },
                 "query": {"type": "string"},
                 "status": {
                     "type": ["string", "null"],
@@ -225,7 +239,7 @@ TOOLS = [
                     "maximum": 10,
                 },
             },
-            "required": ["query", "status", "limit"],
+            "required": ["tag", "query", "status", "limit"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -241,6 +255,11 @@ TOOLS = [
         "parameters": {
             "type": "object",
             "properties": {
+                "tag": {
+                    "type": ["string", "null"],
+                    "enum": ["arbeit", "privat", None],
+                    "description": "Optionaler Bereichsfilter; null sucht in allen Bereichen.",
+                },
                 "status": {
                     "type": ["string", "null"],
                     "description": (
@@ -254,7 +273,7 @@ TOOLS = [
                     "maximum": 50,
                 },
             },
-            "required": ["status", "limit"],
+            "required": ["tag", "status", "limit"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -289,6 +308,14 @@ TOOLS = [
         "parameters": {
             "type": "object",
             "properties": {
+                "tags": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string", "enum": ["arbeit", "privat"]},
+                    "description": (
+                        "Bereiche des Vorhabens. Liste setzt die Zuordnung; "
+                        "[] oder null legt es ohne Zuordnung an."
+                    ),
+                },
                 "title": {"type": "string"},
                 "description": {"type": ["string", "null"]},
                 "status": {
@@ -351,12 +378,30 @@ TOOLS = [
                     "type": ["string", "null"],
                     "description": "Der konkrete nächste Schritt.",
                 },
+                "blocked_reason": {
+                    "type": ["string", "null"],
+                    "description": (
+                        "Warum das Vorhaben wartet (z. B. "
+                        "'Visum noch nicht beantragt', "
+                        "'Warte auf Rückmeldung')."
+                    ),
+                },
+                "preparation_weeks": {
+                    "type": ["integer", "null"],
+                    "description": (
+                        "Wie viele Wochen vor event_start "
+                        "oder act_by sollte begonnen werden."
+                    ),
+                    "minimum": 1,
+                },
             },
             "required": [
+                "tags",
                 "title", "description", "status", "priority",
                 "deadline", "event_start", "event_end",
                 "time_precision", "act_by", "time_text",
-                "next_action",
+                "next_action", "blocked_reason",
+                "preparation_weeks",
             ],
             "additionalProperties": False,
         },
@@ -375,6 +420,14 @@ TOOLS = [
         "parameters": {
             "type": "object",
             "properties": {
+                "tags": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string", "enum": ["arbeit", "privat"]},
+                    "description": (
+                        "Bereiche des Vorhabens. Liste ersetzt die Zuordnung; "
+                        "[] entfernt alle, null lässt sie unverändert."
+                    ),
+                },
                 "thread_id": {"type": "integer"},
                 "title": {"type": ["string", "null"]},
                 "description": {"type": ["string", "null"]},
@@ -430,12 +483,29 @@ TOOLS = [
                     ),
                 },
                 "next_action": {"type": ["string", "null"]},
+                "blocked_reason": {
+                    "type": ["string", "null"],
+                    "description": (
+                        "Warum das Vorhaben wartet. "
+                        "Leerstring zum Entfernen."
+                    ),
+                },
+                "preparation_weeks": {
+                    "type": ["integer", "null"],
+                    "description": (
+                        "Wie viele Wochen vor event_start "
+                        "oder act_by sollte begonnen werden."
+                    ),
+                    "minimum": 1,
+                },
             },
             "required": [
+                "tags",
                 "thread_id", "title", "description", "status",
                 "priority", "deadline", "event_start",
                 "event_end", "time_precision", "act_by",
-                "time_text", "next_action",
+                "time_text", "next_action", "blocked_reason",
+                "preparation_weeks",
             ],
             "additionalProperties": False,
         },
@@ -764,6 +834,7 @@ def execute_tool(
         return search_threads(
             arguments["query"],
             status=arguments.get("status"),
+            tag=arguments.get("tag"),
             limit=limit,
         )
 
@@ -771,6 +842,7 @@ def execute_tool(
         limit = max(1, min(arguments["limit"], 50))
         return list_threads(
             status=arguments.get("status"),
+            tag=arguments.get("tag"),
             limit=limit,
         )
 
@@ -796,6 +868,9 @@ def execute_tool(
             act_by=arguments.get("act_by"),
             time_text=arguments.get("time_text"),
             next_action=arguments.get("next_action"),
+            blocked_reason=arguments.get("blocked_reason"),
+            preparation_weeks=arguments.get("preparation_weeks"),
+            tags=arguments.get("tags"),
             source_message_id=source_message_id,
         )
         return {"thread_id": thread_id}
@@ -811,7 +886,8 @@ def execute_tool(
                 "title", "description", "status",
                 "priority", "deadline", "event_start",
                 "event_end", "time_precision", "act_by",
-                "time_text", "next_action",
+                "time_text", "next_action", "blocked_reason",
+                "preparation_weeks", "tags",
             )
             if arguments.get(key) is not None
         }

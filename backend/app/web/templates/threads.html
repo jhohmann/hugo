@@ -6,6 +6,17 @@
   <p class="muted">Änderungen besprichst du am besten im <a href="/ui/chat">Chat</a> mit Hugo.</p>
 </div>
 
+<form method="get" action="/ui/threads" class="actions">
+  <label for="thread-tag">Bereich</label>
+  <select id="thread-tag" name="tag">
+    <option value="">Alle Bereiche</option>
+    {% for value, label in fmt.THREAD_TAG_LABELS.items() %}
+    <option value="{{ value }}"{% if selected_tag == value %} selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="button">Filtern</button>
+</form>
+
 {% for status, items in groups %}
 {% if status in ("completed", "archived") %}
 <details class="thread-group">
@@ -23,6 +34,6 @@
 </section>
 {% endif %}
 {% else %}
-<p class="empty-state card">Noch keine Vorhaben. Sprich mit Hugo im Chat über deine Pläne.</p>
+<p class="empty-state card">{% if selected_tag %}Keine Vorhaben in diesem Bereich.{% else %}Noch keine Vorhaben. Sprich mit Hugo im Chat über deine Pläne.{% endif %}</p>
 {% endfor %}
 {% endblock %}

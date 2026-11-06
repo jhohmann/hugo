@@ -17,6 +17,8 @@ THREAD_STATUS_LABELS = {
     "archived": "Archiviert",
 }
 
+THREAD_TAG_LABELS = {"arbeit": "Arbeit", "privat": "Privat"}
+
 SUGGESTION_STATUS_LABELS = {
     "open": "Offen",
     "confirmed": "Bestätigt",

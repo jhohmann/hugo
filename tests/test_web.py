@@ -25,6 +25,31 @@ def client(monkeypatch):
     return TestClient(app, headers={"Origin": "http://testserver"})
 
 
+def test_thread_area_filter_and_detail(client, fake_storage):
+    fake_storage["threads"][0]["tags"] = ["privat"]
+    fake_storage["threads"][1]["tags"] = ["arbeit", "privat"]
+    response = client.get("/ui/threads?tag=arbeit")
+    assert response.status_code == 200
+    assert "Schottland" in response.text and "Norwegen-Reise" not in response.text
+    assert 'value="arbeit" selected' in response.text
+    detail = client.get("/ui/threads/6")
+    assert "Arbeit, Privat" in detail.text
+    assert "Norwegen-Reise" in client.get("/ui/threads?tag=").text
+    assert client.get("/ui/threads?tag=unknown").status_code == 400
+
+
+def test_thread_api_area_filter(client, monkeypatch):
+    from app import main
+    calls = []
+    monkeypatch.setattr(main, "list_threads", lambda **kwargs: calls.append(kwargs) or [{"id": 1, "tags": ["arbeit"]}])
+    response = client.get("/threads?tag=arbeit&status=active")
+    assert response.status_code == 200
+    assert response.json()["threads"][0]["tags"] == ["arbeit"]
+    assert calls == [{"status": "active", "limit": 100, "tag": "arbeit"}]
+    assert client.get("/threads?tag=unknown").status_code == 400
+    assert len(calls) == 1
+
+
 @pytest.fixture
 def fake_storage(monkeypatch):
     """Ersetzt alle Datenzugriffe des Web-Moduls."""
@@ -151,7 +176,7 @@ def fake_storage(monkeypatch):
     )
     monkeypatch.setattr(
         web_routes, "list_threads",
-        lambda limit=50: state["threads"],
+        lambda limit=50, tag=None: [t for t in state["threads"] if tag is None or tag in t.get("tags", [])],
     )
     monkeypatch.setattr(web_routes, "get_thread", fake_get_thread)
 

@@ -123,6 +123,36 @@ def test_create_thread_verknuepft_quellnachricht(thread_ids):
         )
 
 
+def test_create_thread_mit_blocked_reason_und_preparation_weeks(thread_ids):
+    thread_id = create_thread(
+        "Japan-Reise",
+        status="active",
+        blocked_reason="Visum noch nicht beantragt",
+        preparation_weeks=12,
+    )
+    thread_ids.append(thread_id)
+
+    thread = get_thread(thread_id)
+
+    assert thread["blocked_reason"] == "Visum noch nicht beantragt"
+    assert thread["preparation_weeks"] == 12
+
+
+def test_update_thread_mit_blocked_reason_und_preparation_weeks(thread_ids):
+    thread_id = create_thread("Norwegen-Reise", status="active")
+    thread_ids.append(thread_id)
+
+    update_thread(
+        thread_id,
+        blocked_reason="Warte auf Rückmeldung",
+        preparation_weeks=8,
+    )
+
+    thread = get_thread(thread_id)
+    assert thread["blocked_reason"] == "Warte auf Rückmeldung"
+    assert thread["preparation_weeks"] == 8
+
+
 def test_update_thread_laesst_andere_threads_unveraendert(
     thread_ids,
 ):

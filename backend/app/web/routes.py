@@ -27,7 +27,7 @@ from app.storage.suggestions import (
     list_suggestions,
     update_suggestion_status,
 )
-from app.storage.threads import get_thread, list_threads
+from app.storage.threads import get_thread, list_threads, validate_tag
 from app.tools.dates import today_berlin
 from app.web import formatting as fmt
 
@@ -252,8 +252,13 @@ def evaluate(request: Request):
 
 
 @router.get("/threads")
-def threads(request: Request):
-    all_threads = list_threads(limit=500)
+def threads(request: Request, tag: str | None = None):
+    tag = tag or None
+    try:
+        validate_tag(tag)
+    except ValueError as exc:
+        return _error_page(request, 400, str(exc))
+    all_threads = list_threads(limit=500, tag=tag)
     groups = [
         (status, [t for t in all_threads if t["status"] == status])
         for status in THREAD_GROUPS
@@ -265,6 +270,7 @@ def threads(request: Request):
         {
             **_nav("threads"),
             "groups": groups,
+            "selected_tag": tag,
             "fmt": fmt,
         },
     )

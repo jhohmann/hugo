@@ -196,6 +196,8 @@ Vorschläge entstehen durch manuelle oder geplante Auswertungen. Beim Anzeigen w
 
 `/ui/threads` · `/ui/threads/{id}`
 
+- Bereiche **Arbeit** und **Privat** als Kennzeichnung und Filter.
+- Ein Vorhaben kann beiden Bereichen oder keinem zugeordnet sein. **Alle Bereiche** zeigt auch unzugeordnete Vorhaben.
 - Gruppierung nach Aktiv, Wartet und Idee; Erledigt und Archiviert sind einklappbar.
 - Übersicht über nächsten Schritt, Priorität, Ereigniszeitraum und Fristen.
 - Detailansicht mit Beschreibung, ursprünglicher Zeitangabe und zugehörigen Vorschlägen.
@@ -632,6 +634,16 @@ Erinnerungen haben den Status `proposed`, `confirmed` oder `outdated`. Exakte Du
 
 `thread_memories` und `thread_messages` verknüpfen Vorhaben mit Wissen und Quellnachrichten.
 
+`thread_tags` ordnet einem Vorhaben die Bereiche `arbeit` und `privat` zu.
+Die Zuordnung erfolgt über den Chat, beispielsweise „Ordne die Fortbildung Arbeit zu“
+oder „Entferne die Bereichszuordnung“. Hugo verwendet eindeutigen Kontext und
+berücksichtigt Nutzerkorrekturen. Bei unklarem Kontext bleibt die Zuordnung offen.
+
+Die Thread-Werkzeuge geben `tags` als Liste zurück. Beim Erstellen und Aktualisieren
+setzt eine Liste die vollständige Zuordnung; `[]` entfernt alle Tags, `null` lässt
+die Zuordnung unverändert. Suchen und Auflisten unterstützen den optionalen Filter
+`tag`. Bereiche dienen der Organisation, nicht der Zugriffskontrolle.
+
 Die Agentenwerkzeuge `search_threads`, `list_threads`, `get_thread`, `create_thread` und `update_thread` verwenden IDs aus vorherigen Such- oder Leseaufrufen. Updates verändern nur ausdrücklich mitgegebene Felder.
 
 ### Zeitplanung
@@ -710,7 +722,7 @@ Nach der Anmeldung stehen `/docs`, `/redoc` und `/openapi.json` zur Verfügung. 
 | GET | `/conversations` | Jüngste Unterhaltungen |
 | GET | `/conversations/{id}/messages` | Nachrichten einer Unterhaltung |
 | GET | `/memories` | Erinnerungen anzeigen |
-| GET | `/threads` | Vorhaben; optionaler `status`-Filter |
+| GET | `/threads` | Vorhaben; optionale Filter `status` und `tag=arbeit` oder `tag=privat` |
 
 ### Auswertung und Vorschläge
 

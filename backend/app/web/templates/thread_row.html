@@ -6,6 +6,9 @@
     {% endif %}
   </div>
   <div class="thread-row-meta">
+    {% for tag in t.tags|default([]) %}
+    <span class="status">{{ fmt.THREAD_TAG_LABELS[tag] }}</span>
+    {% endfor %}
     <span class="status status-{{ t.status }}">{{ fmt.thread_status_label(t.status) }}</span>
     {% if t.priority %}
     <span class="priority prio-{{ t.priority }}" title="Priorität {{ t.priority }} von 5">P{{ t.priority }}</span>
@@ -22,6 +25,14 @@
     {% if t.deadline %}
     <span class="date-hint {{ fmt.urgency_class(t.deadline) }}" title="Feste Deadline">
       Deadline {{ t.deadline|de_date }} ({{ fmt.relative_label(t.deadline) }})
+    </span>
+    {% endif %}
+    {% if t.blocked_reason %}
+    <span class="status status-waiting" title="Blockiert">{{ t.blocked_reason }}</span>
+    {% endif %}
+    {% if t.preparation_weeks %}
+    <span class="date-hint" title="Vorbereitungszeit">
+      {{ t.preparation_weeks }}W Vorbereitung
     </span>
     {% endif %}
   </div>

@@ -22,7 +22,7 @@ from app.storage.suggestions import (
     list_suggestions,
     update_suggestion_status,
 )
-from app.storage.threads import THREAD_STATUSES, list_threads
+from app.storage.threads import THREAD_STATUSES, list_threads, validate_tag
 from app.storage.database import (
     get_messages,
     list_conversations,
@@ -90,7 +90,11 @@ def get_memories(limit: int = 100):
 
 
 @app.get("/threads")
-def get_threads(status: str | None = None, limit: int = 100):
+def get_threads(status: str | None = None, limit: int = 100, tag: str | None = None):
+    try:
+        validate_tag(tag)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if status is not None and status not in THREAD_STATUSES:
         raise HTTPException(
             status_code=400,
@@ -100,7 +104,7 @@ def get_threads(status: str | None = None, limit: int = 100):
             ),
         )
     limit = max(1, min(limit, 500))
-    return {"threads": list_threads(status=status, limit=limit)}
+    return {"threads": list_threads(status=status, limit=limit, tag=tag)}
 
 
 @app.get("/conversations/{conversation_id}/messages")

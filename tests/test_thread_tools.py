@@ -152,6 +152,68 @@ def test_update_thread_nur_act_by(fake_storage):
     }
 
 
+def test_create_thread_mit_blocked_reason_und_preparation_weeks(fake_storage):
+    assistant.create_thread.return_value = 9
+
+    result = assistant.execute_tool(
+        "create_thread",
+        {
+            "title": "Japan-Reise",
+            "description": "Rundreise durch Japan",
+            "status": "active",
+            "priority": 4,
+            "deadline": None,
+            "event_start": "2027-03-15",
+            "event_end": "2027-03-29",
+            "time_precision": "exact",
+            "act_by": "2027-01-15",
+            "time_text": None,
+            "next_action": "Visum beantragen",
+            "blocked_reason": "Visum noch nicht beantragt",
+            "preparation_weeks": 12,
+        },
+        source_message_id=1,
+    )
+
+    assert result == {"thread_id": 9}
+    kwargs = fake_storage["create_thread"][0]["kwargs"]
+    assert kwargs["blocked_reason"] == "Visum noch nicht beantragt"
+    assert kwargs["preparation_weeks"] == 12
+
+
+def test_update_thread_mit_blocked_reason_und_preparation_weeks(fake_storage):
+    assistant.update_thread.return_value = {"id": 3}
+
+    result = assistant.execute_tool(
+        "update_thread",
+        {
+            "thread_id": 3,
+            "title": None,
+            "description": None,
+            "status": None,
+            "priority": None,
+            "deadline": None,
+            "event_start": None,
+            "event_end": None,
+            "time_precision": None,
+            "act_by": None,
+            "time_text": None,
+            "next_action": None,
+            "blocked_reason": "Warte auf Rückmeldung",
+            "preparation_weeks": 8,
+        },
+        source_message_id=1,
+    )
+
+    kwargs = fake_storage["update_thread"][0]["kwargs"]
+    assert kwargs == {
+        "blocked_reason": "Warte auf Rückmeldung",
+        "preparation_weeks": 8,
+        "source_message_id": 1,
+    }
+    assert result["updated"] is True
+
+
 def test_update_thread_ohne_aenderungen_ruft_storage_nicht(
     fake_storage,
 ):
@@ -234,6 +296,44 @@ def test_unbekanntes_werkzeug_wirft_fehler():
             {},
             source_message_id=1,
         )
+
+
+def test_thread_tags_dispatch(fake_storage):
+    assistant.create_thread.return_value = 1
+    assistant.update_thread.return_value = {"id": 1, "tags": []}
+    assistant.search_threads.return_value = []
+    assistant.list_threads.return_value = []
+    assistant.execute_tool("create_thread", {"title": "Projekt", "tags": ["arbeit"]})
+    assert fake_storage["create_thread"][0]["kwargs"]["tags"] == ["arbeit"]
+    assistant.execute_tool("update_thread", {"thread_id": 1, "tags": []})
+    assert fake_storage["update_thread"][0]["kwargs"]["tags"] == []
+    assert assistant.execute_tool("update_thread", {"thread_id": 1, "tags": None})["reason"] == "no_changes"
+    for name in ("list_threads", "search_threads"):
+        assistant.execute_tool(name, {"query": "Projekt", "limit": 10, "tag": "arbeit"})
+        assert fake_storage[name][0]["kwargs"]["tag"] == "arbeit"
+
+
+@pytest.mark.parametrize("tags", [["unknown"], [None], "arbeit", [1]])
+def test_invalid_thread_tags_rejected_before_io(monkeypatch, tags):
+    monkeypatch.setattr(thread_storage, "get_connection", lambda: pytest.fail("Unexpected DB access"))
+    monkeypatch.setattr(thread_storage, "embed_document", lambda _: pytest.fail("Unexpected embedding"))
+    with pytest.raises(ValueError):
+        thread_storage.create_thread("Test", tags=tags)
+    with pytest.raises(ValueError):
+        thread_storage.update_thread(1, tags=tags)
+    with pytest.raises(ValueError):
+        thread_storage.list_threads(tag="unknown")
+    with pytest.raises(ValueError):
+        thread_storage.search_threads("Test", tag="unknown")
+
+
+def test_thread_tag_tool_schemas_are_strict():
+    for tool in assistant.TOOLS:
+        if tool["name"] in ("create_thread", "update_thread", "list_threads", "search_threads"):
+            params = tool["parameters"]
+            assert set(params["required"]) == set(params["properties"])
+            key = "tags" if tool["name"] in ("create_thread", "update_thread") else "tag"
+            assert key in params["properties"]
 
 
 def test_compute_date_werkzeug():

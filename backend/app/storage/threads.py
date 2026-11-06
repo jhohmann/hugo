@@ -24,6 +24,7 @@ THREAD_STATUSES = (
 )
 
 CLOSED_STATUSES = ("completed", "archived")
+THREAD_TAGS = ("arbeit", "privat")
 
 MIN_PRIORITY = 1
 MAX_PRIORITY = 5
@@ -31,7 +32,10 @@ MAX_PRIORITY = 5
 COLUMNS = (
     "id, title, description, status, priority,"
     " deadline, event_start, event_end, time_precision,"
-    " act_by, time_text, next_action, created_at, updated_at"
+    " act_by, time_text, next_action, blocked_reason,"
+    " preparation_weeks, created_at, updated_at,"
+    " ARRAY(SELECT tag FROM thread_tags"
+    " WHERE thread_id = threads.id ORDER BY tag) AS tags"
 )
 
 # Genauigkeit der Zeitangabe:
@@ -39,6 +43,32 @@ COLUMNS = (
 # approximate = ungefähre Angabe (z. B. 'Mitte Juni');
 #               die Originalangabe steht in time_text
 TIME_PRECISIONS = ("exact", "approximate")
+
+
+def validate_tag(tag):
+    if tag is not None and tag not in THREAD_TAGS:
+        raise ValueError("Ungültiger Bereich. Erlaubt: Arbeit, Privat.")
+    return tag
+
+
+def _validate_tags(tags):
+    if tags is None:
+        return None
+    if not isinstance(tags, list):
+        raise ValueError("tags muss eine Liste sein.")
+    for tag in tags:
+        if not isinstance(tag, str):
+            raise ValueError("Jeder Tag muss eine Zeichenkette sein.")
+        validate_tag(tag)
+    return sorted(set(tags))
+
+
+def _set_tags(cur, thread_id, tags):
+    cur.execute("DELETE FROM thread_tags WHERE thread_id = %s", (thread_id,))
+    cur.executemany(
+        "INSERT INTO thread_tags (thread_id, tag) VALUES (%s, %s)",
+        [(thread_id, tag) for tag in tags],
+    )
 
 
 def _validate_status(status):
@@ -127,8 +157,11 @@ def _row_to_dict(row) -> dict:
         "act_by": row[9],
         "time_text": row[10],
         "next_action": row[11],
-        "created_at": row[12],
-        "updated_at": row[13],
+        "blocked_reason": row[12],
+        "preparation_weeks": row[13],
+        "created_at": row[14],
+        "updated_at": row[15],
+        "tags": row[16],
     }
 
 
@@ -157,8 +190,12 @@ def create_thread(
     act_by=None,
     time_text: str | None = None,
     next_action: str | None = None,
+    blocked_reason: str | None = None,
+    preparation_weeks: int | None = None,
     source_message_id: int | None = None,
+    tags: list[str] | None = None,
 ) -> int:
+    tags = _validate_tags(tags)
     status = _validate_status(status) or "proposed"
     priority = _validate_priority(priority)
     deadline = _parse_deadline(deadline)
@@ -180,19 +217,23 @@ def create_thread(
                     (title, description, status, priority,
                      deadline, event_start, event_end,
                      time_precision, act_by, time_text,
-                     next_action, embedding)
+                     next_action, blocked_reason,
+                     preparation_weeks, embedding)
                 VALUES (%s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s)
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
                     title, description, status, priority,
                     deadline, event_start, event_end,
                     time_precision, act_by, time_text,
-                    next_action, embedding,
+                    next_action, blocked_reason,
+                    preparation_weeks, embedding,
                 ),
             )
             thread_id = cur.fetchone()[0]
+            if tags:
+                _set_tags(cur, thread_id, tags)
             _link_message(cur, thread_id, source_message_id)
             return thread_id
 
@@ -212,8 +253,10 @@ def list_threads(
     status: str | None = None,
     limit: int = 50,
     open_only: bool = False,
+    tag: str | None = None,
 ) -> list[dict]:
     status = _validate_status(status)
+    tag = validate_tag(tag)
 
     where = ""
     params: list = []
@@ -222,6 +265,10 @@ def list_threads(
     elif status is not None:
         where = "WHERE status = %s"
         params.append(status)
+    if tag is not None:
+        where += " AND " if where else "WHERE "
+        where += "EXISTS (SELECT 1 FROM thread_tags WHERE thread_id = threads.id AND tag = %s)"
+        params.append(tag)
     params.append(limit)
 
     with get_connection() as conn:
@@ -251,18 +298,21 @@ def search_threads(
     query: str,
     status: str | None = None,
     limit: int = 10,
+    tag: str | None = None,
 ) -> list[dict]:
     status = _validate_status(status)
+    tag = validate_tag(tag)
     embedding = embed_query(query)
 
-    # Platzhalter-Reihenfolge im SQL beachten:
-    # 1. Similarity im SELECT, 2. optionaler Status im WHERE,
-    # 3. Embedding im ORDER BY, 4. LIMIT.
+    # Platzhalter: Similarity, optionale Filter, Sortiervektor, Limit.
     where = "embedding IS NOT NULL"
     params: list = [embedding]
     if status is not None:
         where += " AND status = %s"
         params.append(status)
+    if tag is not None:
+        where += " AND EXISTS (SELECT 1 FROM thread_tags WHERE thread_id = threads.id AND tag = %s)"
+        params.append(tag)
     params.extend([embedding, limit])
 
     with get_connection() as conn:
@@ -282,8 +332,8 @@ def search_threads(
             )
             results = []
             for row in cur.fetchall():
-                thread = _row_to_dict(row[:14])
-                thread["similarity"] = round(float(row[14]), 3)
+                thread = _row_to_dict(row[:-1])
+                thread["similarity"] = round(float(row[-1]), 3)
                 results.append(thread)
             return results
 
@@ -302,12 +352,16 @@ def update_thread(
     act_by=None,
     time_text: str | None = None,
     next_action: str | None = None,
+    blocked_reason: str | None = None,
+    preparation_weeks: int | None = None,
     source_message_id: int | None = None,
+    tags: list[str] | None = None,
 ) -> dict | None:
     # Nur explizit übergebene (nicht-None) Felder werden
     # geändert; alle anderen bleiben unangetastet.
 
     # Vollständige Validierung vor jeder Datenbankabfrage.
+    tags = _validate_tags(tags)
     status = _validate_status(status)
     priority = _validate_priority(priority)
     deadline = _parse_deadline(deadline)
@@ -352,8 +406,14 @@ def update_thread(
     if next_action is not None:
         sets.append("next_action = %s")
         params.append(next_action)
+    if blocked_reason is not None:
+        sets.append("blocked_reason = %s")
+        params.append(blocked_reason)
+    if preparation_weeks is not None:
+        sets.append("preparation_weeks = %s")
+        params.append(preparation_weeks)
 
-    if not sets:
+    if not sets and tags is None:
         raise ValueError("Keine Änderungen übergeben.")
 
     with get_connection() as conn:
@@ -365,12 +425,15 @@ def update_thread(
             # die gespeicherten Werte validieren.
             cur.execute(
                 "SELECT title, description, event_start, event_end"
-                " FROM threads WHERE id = %s",
+                " FROM threads WHERE id = %s FOR UPDATE",
                 (thread_id,),
             )
             row = cur.fetchone()
             if row is None:
                 return None
+
+            if tags is not None:
+                _set_tags(cur, thread_id, tags)
 
             if event_start is not None or event_end is not None:
                 new_start = (
