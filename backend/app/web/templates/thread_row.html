@@ -6,6 +6,12 @@
     {% endif %}
   </div>
   <div class="thread-row-meta">
+    {% if t.review_on %}
+    <span class="date-hint {{ fmt.urgency_class(t.review_on) }}">Wiedervorlage {{ t.review_on|de_date }}</span>
+    {% endif %}
+    {% if t.waiting_for %}
+    <span class="date-hint">Wartet auf: {{ t.waiting_for }}</span>
+    {% endif %}
     {% for tag in t.tags|default([]) %}
     <span class="status">{{ fmt.THREAD_TAG_LABELS[tag] }}</span>
     {% endfor %}

@@ -47,6 +47,8 @@
       </form>
       <form method="post" action="/ui/suggestions/{{ s.id }}">
         <input type="hidden" name="action" value="deferred">
+        <label for="defer-{{ s.id }}">Wieder anzeigen am</label>
+        <input id="defer-{{ s.id }}" type="date" name="deferred_until" required>
         <button type="submit" class="button button-small">Zurückstellen</button>
       </form>
       <form method="post" action="/ui/suggestions/{{ s.id }}" data-confirm="Diesen Vorschlag wirklich verwerfen?">
@@ -65,6 +67,7 @@
   <summary>Zurückgestellt ({{ deferred_suggestions|length }})</summary>
   {% for s in deferred_suggestions %}
   <article class="card suggestion muted-card">
+    <p class="date-hint">{% if s.deferred_until %}Zurückgestellt bis {{ s.deferred_until|de_date }}{% else %}Ohne Wiedervorlagedatum zurückgestellt{% endif %}</p>
     <header class="suggestion-head">
       {% if s.priority %}
       <span class="priority prio-{{ s.priority }}" title="Priorität {{ s.priority }} von 5">P{{ s.priority }}</span>
@@ -81,6 +84,12 @@
       <form method="post" action="/ui/suggestions/{{ s.id }}">
         <input type="hidden" name="action" value="confirmed">
         <button type="submit" class="button button-small">Bestätigen</button>
+      </form>
+      <form method="post" action="/ui/suggestions/{{ s.id }}">
+        <input type="hidden" name="action" value="deferred">
+        <label for="defer-{{ s.id }}">Wieder anzeigen am</label>
+        <input id="defer-{{ s.id }}" type="date" name="deferred_until" value="{{ s.deferred_until or '' }}" required>
+        <button type="submit" class="button button-small">Datum setzen</button>
       </form>
       <form method="post" action="/ui/suggestions/{{ s.id }}" data-confirm="Diesen Vorschlag wirklich verwerfen?">
         <input type="hidden" name="action" value="dismissed">

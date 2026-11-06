@@ -38,7 +38,7 @@ def migration_files(tmp_path):
 def test_fresh_install_and_repeat(database):
     result = migrate.run_migrations(database)
     assert result["status"] == "ok"
-    assert [m["version"] for m in result["applied"]] == [1, 2, 3]
+    assert [m["version"] for m in result["applied"]] == [1, 2, 3, 4]
     with psycopg.connect(database) as conn:
         assert conn.execute("SELECT count(*) FROM pg_tables WHERE schemaname='public'").fetchone()[0] == 16
         assert conn.execute("SELECT checksum FROM schema_version").fetchone()[0]
@@ -116,7 +116,7 @@ def test_concurrent_runners_apply_once(database):
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: migrate.run_migrations(database), range(2)))
     assert all(result["status"] == "ok" for result in results)
-    assert sum(len(result["applied"]) for result in results) == 3
+    assert sum(len(result["applied"]) for result in results) == 4
 
 
 def test_duplicate_versions_rejected_before_connect(tmp_path):

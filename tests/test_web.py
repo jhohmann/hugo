@@ -180,7 +180,7 @@ def fake_storage(monkeypatch):
     )
     monkeypatch.setattr(web_routes, "get_thread", fake_get_thread)
 
-    def fake_update(suggestion_id, status):
+    def fake_update(suggestion_id, status, deferred_until=None):
         state["status_updates"].append((suggestion_id, status))
         for s in state["suggestions"]:
             if s["id"] == suggestion_id:

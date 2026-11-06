@@ -1,5 +1,6 @@
 
 import logging
+from datetime import date
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -50,6 +51,7 @@ class ChatRequest(BaseModel):
 
 class SuggestionPatch(BaseModel):
     status: str = Field(min_length=1)
+    deferred_until: date | None = None
 
 
 @app.get("/")
@@ -178,7 +180,12 @@ def patch_suggestion(suggestion_id: int, patch: SuggestionPatch):
                 "Allowed: confirmed, deferred, dismissed"
             ),
         )
-    result = update_suggestion_status(suggestion_id, patch.status)
+    try:
+        result = update_suggestion_status(
+            suggestion_id, patch.status, deferred_until=patch.deferred_until,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(
             status_code=404,

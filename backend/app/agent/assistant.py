@@ -12,7 +12,7 @@ from app.storage.memory_search import (
     create_memory,
     update_memory,
 )
-from app.storage.suggestions import create_suggestion
+from app.storage.suggestions import create_suggestion, list_suggestions, update_suggestion_status
 from app.storage.threads import (
     search_threads,
     list_threads,
@@ -58,6 +58,21 @@ Threads verfolgen längerfristige Vorhaben und laufende
 Initiativen über Gespräche hinweg.
 Reine Fakten und einzelne Entscheidungen gehören
 in Erinnerungen, nicht in Threads.
+
+- Wiedervorlage: review_on ist der nächste interne Prüftermin (ISO-Datum),
+  keine feste Deadline und kein Kalendertermin. waiting_for beschreibt,
+  auf wen oder was gewartet wird; blocked_reason erklärt das Hindernis.
+- Bei "nächste Woche wieder erinnern" nutze compute_date und setze review_on
+  für das gefundene Vorhaben. Vor diesem Tag erscheinen keine neuen Hinweise
+  dazu. Keine eigenmächtigen täglichen Wiedervorlagen oder erfundenen Fristen.
+- Bei Bezug auf einen konkreten Vorschlag: list_suggestions aufrufen und
+  seine ID mit defer_suggestion bis zum gewünschten Datum zurückstellen.
+  Keine IDs raten. Nur bei unklarem Bezug gezielt nachfragen.
+- Bei einer eingegangenen Rückmeldung den bestehenden Thread aktualisieren:
+  passenden Status und nächsten Schritt setzen, erledigte waiting_for und
+  blocked_reason sowie veraltete review_on über clear_fields entfernen.
+  Nur tatsächlich aufgelöste Wartegründe löschen. null lässt Felder unverändert.
+  completed/archived beendet Wiedervorlagen und offene Hinweise automatisch.
 
 - Bereiche (tags): arbeit und privat. Ordne Vorhaben anhand
   eindeutigen Kontexts oder auf Wunsch zu; beide sind möglich.
@@ -308,6 +323,14 @@ TOOLS = [
         "parameters": {
             "type": "object",
             "properties": {
+                "review_on": {
+                    "type": ["string", "null"],
+                    "description": "Naechster interner Prueftermin (ISO-Datum); pausiert Hinweise bis dahin.",
+                },
+                "waiting_for": {
+                    "type": ["string", "null"],
+                    "description": "Auf wen oder was wird gewartet?",
+                },
                 "tags": {
                     "type": ["array", "null"],
                     "items": {"type": "string", "enum": ["arbeit", "privat"]},
@@ -396,6 +419,7 @@ TOOLS = [
                 },
             },
             "required": [
+                "review_on", "waiting_for",
                 "tags",
                 "title", "description", "status", "priority",
                 "deadline", "event_start", "event_end",
@@ -420,6 +444,19 @@ TOOLS = [
         "parameters": {
             "type": "object",
             "properties": {
+                "review_on": {
+                    "type": ["string", "null"],
+                    "description": "Naechster interner Prueftermin (ISO-Datum); pausiert Hinweise bis dahin.",
+                },
+                "waiting_for": {
+                    "type": ["string", "null"],
+                    "description": "Auf wen oder was wird gewartet?",
+                },
+                "clear_fields": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string", "enum": ["review_on", "waiting_for", "blocked_reason"]},
+                    "description": "Diese Felder explizit leeren; nicht zugleich neue Werte setzen. Sonst [] oder null.",
+                },
                 "tags": {
                     "type": ["array", "null"],
                     "items": {"type": "string", "enum": ["arbeit", "privat"]},
@@ -500,6 +537,7 @@ TOOLS = [
                 },
             },
             "required": [
+                "review_on", "waiting_for", "clear_fields",
                 "tags",
                 "thread_id", "title", "description", "status",
                 "priority", "deadline", "event_start",
@@ -507,6 +545,37 @@ TOOLS = [
                 "time_text", "next_action", "blocked_reason",
                 "preparation_weeks",
             ],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "list_suggestions",
+        "description": "Findet Vorschlaege und deren IDs zum Anzeigen oder gezielten Zurueckstellen.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": ["integer", "null"]},
+                "status": {"type": ["string", "null"], "enum": ["open", "deferred", "confirmed", "dismissed", None]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+            },
+            "required": ["thread_id", "status", "limit"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "defer_suggestion",
+        "description": "Stellt einen gefundenen Vorschlag auf Nutzerwunsch bis zu einem zukuenftigen Datum zurueck. Nur eine zuvor gelesene ID verwenden.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "suggestion_id": {"type": "integer"},
+                "deferred_until": {"type": "string", "description": "ISO-Datum in Europe/Berlin; muss in der Zukunft liegen."},
+            },
+            "required": ["suggestion_id", "deferred_until"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -803,6 +872,20 @@ def execute_tool(
     source_message_id: int | None = None,
     run_id: int | None = None,
 ):
+    if name == "list_suggestions":
+        return list_suggestions(
+            thread_id=arguments.get("thread_id"), status=arguments.get("status"),
+            limit=max(1, min(arguments["limit"], 100)),
+        )
+
+    if name == "defer_suggestion":
+        if not arguments.get("deferred_until"):
+            raise ValueError("Ein Wiedervorlagedatum ist erforderlich.")
+        result = update_suggestion_status(
+            arguments["suggestion_id"], "deferred", deferred_until=arguments["deferred_until"],
+        )
+        return {"updated": result is not None, "suggestion": result}
+
     if name == "search_memories":
         limit = max(1, min(arguments["limit"], 10))
         return search_memories(arguments["query"], limit=limit)
@@ -871,6 +954,8 @@ def execute_tool(
             blocked_reason=arguments.get("blocked_reason"),
             preparation_weeks=arguments.get("preparation_weeks"),
             tags=arguments.get("tags"),
+            review_on=arguments.get("review_on"),
+            waiting_for=arguments.get("waiting_for"),
             source_message_id=source_message_id,
         )
         return {"thread_id": thread_id}
@@ -887,9 +972,9 @@ def execute_tool(
                 "priority", "deadline", "event_start",
                 "event_end", "time_precision", "act_by",
                 "time_text", "next_action", "blocked_reason",
-                "preparation_weeks", "tags",
+                "preparation_weeks", "tags", "review_on", "waiting_for", "clear_fields",
             )
-            if arguments.get(key) is not None
+            if arguments.get(key) is not None and (key != "clear_fields" or arguments[key])
         }
 
         if not changes:

@@ -1,7 +1,7 @@
 """Speicherung proaktiver Vorschläge und Evaluationsläufe."""
 
 from app.storage.database import get_connection
-from app.tools.dates import parse_date
+from app.tools.dates import parse_date, today_berlin
 
 # Bearbeitungsstatus eines Vorschlags:
 # open      = neu, noch nicht vom Nutzer behandelt
@@ -23,7 +23,7 @@ MAX_PRIORITY = 5
 COLUMNS = (
     "id, thread_id, run_id, content, reason, priority,"
     " suggested_date, delivery_status, status,"
-    " created_at, updated_at"
+    " created_at, updated_at, deferred_until"
 )
 
 RUN_COLUMNS = (
@@ -75,6 +75,7 @@ def _row_to_dict(row) -> dict:
         "status": row[8],
         "created_at": row[9],
         "updated_at": row[10],
+        "deferred_until": row[11],
     }
 
 
@@ -164,6 +165,22 @@ def list_runs(limit: int = 50) -> list[dict]:
 
 # --- Vorschläge ---
 
+def _reactivate_due(cur):
+    """Reactivate once, using the user's Berlin date rather than DB timezone."""
+    today = today_berlin()
+    cur.execute(
+        """UPDATE suggestions s
+           SET status = 'open', deferred_until = NULL,
+               delivery_status = 'pending', updated_at = NOW()
+           WHERE status = 'deferred' AND deferred_until <= %s
+             AND NOT EXISTS (
+                 SELECT 1 FROM threads t WHERE t.id = s.thread_id
+                 AND (t.status IN ('completed', 'archived') OR t.review_on > %s)
+             )""",
+        (today, today),
+    )
+
+
 def create_suggestion(
     thread_id: int | None,
     content: str,
@@ -182,13 +199,28 @@ def create_suggestion(
         with conn.cursor() as cur:
             if thread_id is not None:
                 cur.execute(
-                    "SELECT 1 FROM threads WHERE id = %s",
+                    "SELECT status, review_on FROM threads WHERE id = %s FOR UPDATE",
                     (thread_id,),
                 )
-                if cur.fetchone() is None:
+                thread = cur.fetchone()
+                if thread is None:
                     raise ValueError(
                         f"Thread nicht gefunden: {thread_id}"
                     )
+                if thread[0] in ("completed", "archived"):
+                    return {"created": False, "reason": "thread_closed"}
+                if thread[1] is not None and thread[1] > today_berlin():
+                    return {"created": False, "reason": "review_not_due"}
+                cur.execute(
+                    """SELECT id FROM suggestions WHERE thread_id = %s
+                       AND status = 'deferred'
+                       AND (deferred_until IS NULL OR deferred_until > %s)
+                       LIMIT 1""",
+                    (thread_id, today_berlin()),
+                )
+                deferred = cur.fetchone()
+                if deferred is not None:
+                    return {"created": False, "reason": "deferred", "suggestion_id": deferred[0]}
 
             # Keine identischen Vorschläge wiederholen —
             # weder innerhalb eines Laufs noch über Läufe
@@ -235,9 +267,13 @@ def list_suggestions(
     delivery: str | None = None,
     limit: int = 100,
     mark_surfaced: bool = False,
+    thread_id: int | None = None,
 ) -> list[dict]:
     conditions = []
     params: list = []
+    if thread_id is not None:
+        conditions.append("thread_id = %s")
+        params.append(thread_id)
     if status is not None:
         _validate_status(status)
         conditions.append("status = %s")
@@ -251,6 +287,7 @@ def list_suggestions(
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            _reactivate_due(cur)
             cur.execute(
                 f"""
                 SELECT {COLUMNS}
@@ -272,7 +309,7 @@ def list_suggestions(
                 pending_ids = [
                     s["id"]
                     for s in suggestions
-                    if s["delivery_status"] == "pending"
+                    if s["delivery_status"] == "pending" and s["status"] == "open"
                 ]
                 if pending_ids:
                     cur.execute(
@@ -304,19 +341,42 @@ def count_suggestions_for_run(run_id: int) -> int:
 def update_suggestion_status(
     suggestion_id: int,
     status: str,
+    deferred_until=None,
 ) -> dict | None:
     _validate_status(status)
+    deferred_until = parse_date(deferred_until)
+    if deferred_until is not None:
+        if status != "deferred":
+            raise ValueError("Ein Wiedervorlagedatum ist nur beim Zurückstellen erlaubt.")
+        if deferred_until <= today_berlin():
+            raise ValueError("Bitte ein zukünftiges Wiedervorlagedatum wählen.")
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            # Lock the thread before its suggestion, matching create/update_thread.
+            cur.execute("SELECT thread_id FROM suggestions WHERE id = %s", (suggestion_id,))
+            target = cur.fetchone()
+            if target is None:
+                return None
+            if target[0] is not None:
+                cur.execute("SELECT status FROM threads WHERE id = %s FOR UPDATE", (target[0],))
+                thread = cur.fetchone()
+                if thread and thread[0] in ("completed", "archived") and status in ("open", "deferred"):
+                    raise ValueError("Ein abgeschlossenes Vorhaben kann nicht wieder vorgelegt werden.")
+            cur.execute("SELECT status FROM suggestions WHERE id = %s FOR UPDATE", (suggestion_id,))
+            current = cur.fetchone()
+            if current is None:
+                return None
+            if status == "deferred" and current[0] not in ("open", "deferred"):
+                raise ValueError("Nur offene oder zurückgestellte Vorschläge können zurückgestellt werden.")
             cur.execute(
                 f"""
                 UPDATE suggestions
-                SET status = %s, updated_at = NOW()
+                SET status = %s, deferred_until = %s, updated_at = NOW()
                 WHERE id = %s
                 RETURNING {COLUMNS}
                 """,
-                (status, suggestion_id),
+                (status, deferred_until, suggestion_id),
             )
             row = cur.fetchone()
             return _row_to_dict(row) if row else None

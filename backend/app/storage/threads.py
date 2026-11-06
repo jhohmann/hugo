@@ -7,7 +7,7 @@ from app.storage.embeddings import (
     embed_document,
     embed_query,
 )
-from app.tools.dates import parse_date
+from app.tools.dates import parse_date, today_berlin
 
 # Statusmodell:
 # proposed  = unverbindliche Überlegung oder Option
@@ -35,7 +35,8 @@ COLUMNS = (
     " act_by, time_text, next_action, blocked_reason,"
     " preparation_weeks, created_at, updated_at,"
     " ARRAY(SELECT tag FROM thread_tags"
-    " WHERE thread_id = threads.id ORDER BY tag) AS tags"
+    " WHERE thread_id = threads.id ORDER BY tag) AS tags,"
+    " review_on, waiting_for"
 )
 
 # Genauigkeit der Zeitangabe:
@@ -162,6 +163,8 @@ def _row_to_dict(row) -> dict:
         "created_at": row[14],
         "updated_at": row[15],
         "tags": row[16],
+        "review_on": row[17],
+        "waiting_for": row[18],
     }
 
 
@@ -194,9 +197,14 @@ def create_thread(
     preparation_weeks: int | None = None,
     source_message_id: int | None = None,
     tags: list[str] | None = None,
+    review_on=None,
+    waiting_for: str | None = None,
 ) -> int:
+    review_on = parse_date(review_on)
     tags = _validate_tags(tags)
     status = _validate_status(status) or "proposed"
+    if status in CLOSED_STATUSES:
+        review_on = waiting_for = blocked_reason = None
     priority = _validate_priority(priority)
     deadline = _parse_deadline(deadline)
     event_start = parse_date(event_start)
@@ -218,9 +226,9 @@ def create_thread(
                      deadline, event_start, event_end,
                      time_precision, act_by, time_text,
                      next_action, blocked_reason,
-                     preparation_weeks, embedding)
+                     preparation_weeks, embedding, review_on, waiting_for)
                 VALUES (%s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -228,7 +236,7 @@ def create_thread(
                     deadline, event_start, event_end,
                     time_precision, act_by, time_text,
                     next_action, blocked_reason,
-                    preparation_weeks, embedding,
+                    preparation_weeks, embedding, review_on, waiting_for,
                 ),
             )
             thread_id = cur.fetchone()[0]
@@ -254,6 +262,7 @@ def list_threads(
     limit: int = 50,
     open_only: bool = False,
     tag: str | None = None,
+    review_due_only: bool = False,
 ) -> list[dict]:
     status = _validate_status(status)
     tag = validate_tag(tag)
@@ -269,6 +278,16 @@ def list_threads(
         where += " AND " if where else "WHERE "
         where += "EXISTS (SELECT 1 FROM thread_tags WHERE thread_id = threads.id AND tag = %s)"
         params.append(tag)
+    if review_due_only:
+        where += " AND " if where else "WHERE "
+        where += """status NOT IN ('completed', 'archived')
+            AND (review_on IS NULL OR review_on <= %s)
+            AND NOT EXISTS (
+                SELECT 1 FROM suggestions s WHERE s.thread_id = threads.id
+                AND s.status = 'deferred'
+                AND (s.deferred_until IS NULL OR s.deferred_until > %s)
+            )"""
+        params.extend([today_berlin(), today_berlin()])
     params.append(limit)
 
     with get_connection() as conn:
@@ -283,7 +302,7 @@ def list_threads(
                         WHEN status IN ('completed', 'archived')
                         THEN 1 ELSE 0
                     END,
-                    COALESCE(act_by, event_start, deadline::date)
+                    LEAST(review_on, act_by, event_start, deadline::date)
                         ASC NULLS LAST,
                     priority DESC NULLS LAST,
                     id
@@ -356,13 +375,29 @@ def update_thread(
     preparation_weeks: int | None = None,
     source_message_id: int | None = None,
     tags: list[str] | None = None,
+    review_on=None,
+    waiting_for: str | None = None,
+    clear_fields: list[str] | None = None,
 ) -> dict | None:
     # Nur explizit übergebene (nicht-None) Felder werden
     # geändert; alle anderen bleiben unangetastet.
 
     # Vollständige Validierung vor jeder Datenbankabfrage.
     tags = _validate_tags(tags)
+    review_on = parse_date(review_on)
+    clear_fields = [] if clear_fields is None else clear_fields
+    clearable = {"review_on", "waiting_for", "blocked_reason"}
+    if not isinstance(clear_fields, list) or any(
+        not isinstance(field, str) or field not in clearable for field in clear_fields
+    ):
+        raise ValueError("Löschbare Felder: review_on, waiting_for, blocked_reason.")
+    follow_up = {"review_on": review_on, "waiting_for": waiting_for, "blocked_reason": blocked_reason}
+    if any(follow_up[field] is not None for field in clear_fields):
+        raise ValueError("Ein Feld kann nicht zugleich gesetzt und entfernt werden.")
     status = _validate_status(status)
+    if status in CLOSED_STATUSES:
+        clear_fields = list(clearable)
+        follow_up = {field: None for field in clearable}
     priority = _validate_priority(priority)
     deadline = _parse_deadline(deadline)
     event_start = parse_date(event_start)
@@ -372,6 +407,10 @@ def update_thread(
 
     sets: list[str] = []
     params: list = []
+    for field, value in follow_up.items():
+        if field in clear_fields or value is not None:
+            sets.append(f"{field} = %s")
+            params.append(None if field in clear_fields else value)
 
     if title is not None:
         sets.append("title = %s")
@@ -406,9 +445,6 @@ def update_thread(
     if next_action is not None:
         sets.append("next_action = %s")
         params.append(next_action)
-    if blocked_reason is not None:
-        sets.append("blocked_reason = %s")
-        params.append(blocked_reason)
     if preparation_weeks is not None:
         sets.append("preparation_weeks = %s")
         params.append(preparation_weeks)
@@ -473,5 +509,17 @@ def update_thread(
                 params,
             )
             updated = cur.fetchone()
+            if status in CLOSED_STATUSES or {"waiting_for", "blocked_reason"}.intersection(clear_fields):
+                cur.execute(
+                    """UPDATE suggestions SET status = 'dismissed', deferred_until = NULL,
+                       updated_at = NOW() WHERE thread_id = %s AND status IN ('open', 'deferred')""",
+                    (thread_id,),
+                )
+            elif review_on is not None and review_on > today_berlin():
+                cur.execute(
+                    """UPDATE suggestions SET status = 'deferred', deferred_until = %s,
+                       updated_at = NOW() WHERE thread_id = %s AND status = 'open'""",
+                    (review_on, thread_id),
+                )
             _link_message(cur, thread_id, source_message_id)
             return _row_to_dict(updated) if updated else None

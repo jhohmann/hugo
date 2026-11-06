@@ -216,6 +216,7 @@ def suggestion_action(
     suggestion_id: int,
     action: str = Form(""),
     next: str = Form("/ui/heute"),
+    deferred_until: str = Form(""),
 ):
     if action not in SUGGESTION_ACTIONS:
         return _error_page(
@@ -224,7 +225,12 @@ def suggestion_action(
             "Ungültige Aktion. Erlaubt: bestätigen, "
             "zurückstellen, verwerfen.",
         )
-    result = update_suggestion_status(suggestion_id, action)
+    try:
+        result = update_suggestion_status(
+            suggestion_id, action, deferred_until=deferred_until or None,
+        )
+    except ValueError as exc:
+        return _error_page(request, 400, str(exc))
     if result is None:
         return _error_page(
             request, 404, "Dieser Vorschlag wurde nicht gefunden."

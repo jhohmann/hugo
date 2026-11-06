@@ -187,6 +187,7 @@ Die Oberfläche unter `/ui` führt nach der Anmeldung zur Ansicht **Heute**. Inh
 
 - Offene Vorschläge mit Begründung, Priorität P1–P5, Datum und Vorhabenbezug.
 - Vorschläge bestätigen, zurückstellen oder verwerfen.
+- Beim Zurückstellen unter **Wieder anzeigen am** ein zukünftiges Datum wählen.
 - Zurückgestellte Vorschläge in einem einklappbaren Bereich.
 - Letzten Auswertungslauf anzeigen und über **Jetzt auswerten** eine Auswertung starten.
 
@@ -201,6 +202,11 @@ Vorschläge entstehen durch manuelle oder geplante Auswertungen. Beim Anzeigen w
 - Gruppierung nach Aktiv, Wartet und Idee; Erledigt und Archiviert sind einklappbar.
 - Übersicht über nächsten Schritt, Priorität, Ereigniszeitraum und Fristen.
 - Detailansicht mit Beschreibung, ursprünglicher Zeitangabe und zugehörigen Vorschlägen.
+- Wiedervorlage und **Wartet auf** für offene Rückmeldungen oder andere Voraussetzungen.
+
+Im Chat lässt sich beispielsweise „Warte auf das Angebot von Müller; nächste Woche
+wieder aufgreifen“ festhalten. Bei „Das Angebot ist da“ kann Hugo den Wartekontext
+entfernen und den nächsten Schritt aktualisieren.
 
 ### Kalender
 
@@ -655,12 +661,42 @@ Die Agentenwerkzeuge `search_threads`, `list_threads`, `get_thread`, `create_thr
 | `time_text` | Ursprüngliche Zeitangabe |
 | `deadline` | Vom Nutzer genannte harte Frist |
 | `act_by` | Hugos empfohlener Handlungstermin |
+| `review_on` | Nächster interner Prüftermin, unabhängig von einer Deadline |
+| `waiting_for` | Auf wen oder was gewartet wird |
+| `blocked_reason` | Hindernis, das den Fortschritt verhindert |
+| `preparation_weeks` | Benötigte Vorbereitungszeit in Wochen |
 
-Ein Ereignisende benötigt einen Anfang und darf nicht davor liegen. Offene Vorhaben werden nach `COALESCE(act_by, event_start, deadline)` geordnet.
+Ein Ereignisende benötigt einen Anfang und darf nicht davor liegen. Offene Vorhaben werden nach dem frühesten Wert aus Prüftermin, Handlungstermin, Ereignisbeginn und Deadline geordnet.
 
 Jeder Agentenaufruf erhält Datum, Uhrzeit und deutschen Wochentag in Europe/Berlin. `compute_date` unterstützt Tage, Wochen, Monate und Jahre einschließlich Monatsenden und Schaltjahren.
 
-Fehlende Bezugspunkte bei relativen Zeitangaben führen zu einer Rückfrage. Datetimes ohne Zeitzone werden als UTC interpretiert. Gesetzte Datumsfelder lassen sich über das Tool nicht auf `null` setzen.
+Fehlende Bezugspunkte bei relativen Zeitangaben führen zu einer Rückfrage. Datetimes ohne Zeitzone werden als UTC interpretiert.
+
+`update_thread` kann über `clear_fields` die Felder `review_on`, `waiting_for` und
+`blocked_reason` gezielt entfernen. `null` lässt Werte unverändert. Beim Abschluss
+oder Archivieren werden diese Felder geleert und offene oder zurückgestellte
+Vorschläge des Vorhabens verworfen.
+Das ausdrückliche Entfernen eines Wartekontexts oder Blockers verwirft ebenfalls
+die bisherigen offenen Hinweise zu diesem Vorhaben. Neue nächste Schritte können
+anschließend eigene Vorschläge erhalten.
+
+### Wiedervorlage und Zurückstellen
+
+- Ein zukünftiges `review_on` pausiert neue Hinweise zu diesem Vorhaben. Bereits
+  offene Hinweise werden bis zu diesem Datum zurückgestellt.
+- `deferred_until` legt fest, an welchem Tag ein Vorschlag wieder offen wird.
+- Maßgeblich ist der Kalendertag in **Europe/Berlin**. Es gibt keine stündlichen Erinnerungen.
+- Fällige Vorschläge werden bei einer Auswertung oder beim Abrufen der Vorschläge
+  einmalig wieder geöffnet und als noch nicht zugestellt markiert.
+- Ein späterer Prüftermin des Vorhabens verhindert eine frühere Wiedervorlage.
+- Solange ein Vorschlag zurückgestellt ist, werden keine neuen Vorschläge mit
+  demselben Vorhabenbezug angelegt. Das gilt auch bei anderer Formulierung.
+- Vorschläge ohne Wiedervorlagedatum bleiben unbefristet zurückgestellt. In der
+  Heute-Ansicht kann ein Datum ergänzt werden.
+
+Der Chat verwendet `list_suggestions` zum Finden eines Vorschlags und
+`defer_suggestion` zum datierten Zurückstellen. Ein erreichter Prüftermin ist ein
+Anlass zur Bewertung; das Modell entscheidet, ob ein konkreter Hinweis sinnvoll ist.
 
 ### Proaktive Auswertung
 
@@ -734,6 +770,15 @@ Nach der Anmeldung stehen `/docs`, `/redoc` und `/openapi.json` zur Verfügung. 
 | PATCH | `/suggestions/{id}` | Bestätigen, zurückstellen oder verwerfen |
 
 Zurückgegebene ausstehende Vorschläge werden als `surfaced` markiert.
+
+Datiertes Zurückstellen:
+
+```json
+{"status": "deferred", "deferred_until": "2027-03-15"}
+```
+
+Das Datum muss in der Zukunft liegen. Bei anderen Statuswerten ist
+`deferred_until` nicht zulässig. Ohne Datum ist Zurückstellen unbefristet.
 
 ### Kalender
 
@@ -863,7 +908,7 @@ Fehlerberichte: [GitHub Issues](https://github.com/jhohmann/hugo/issues).
 
 - Ein Nutzer und ein Worker; keine getrennten Arbeits-/Privatkonten.
 - Erinnerungsupdates nur für den Status `proposed`.
-- Datumsfelder lassen sich über Agentenwerkzeuge nicht auf `null` setzen.
+- Ereignis-, Handlungs- und Deadline-Felder lassen sich über Agentenwerkzeuge nicht leeren.
 - Semantisch ähnliche Vorschläge können trotz exakter Duplikatprüfung erneut erscheinen.
 - Begrenzte Listen ohne vollständige Seitennavigation.
 - Keine automatischen Gesprächstitel und keine Push-Benachrichtigungen.
@@ -874,7 +919,7 @@ Fehlerberichte: [GitHub Issues](https://github.com/jhohmann/hugo/issues).
 
 | Bereich | Themen |
 |---|---|
-| Zeitplanung | Abhängigkeiten, Blocker, Wartegründe, Prüftermine und Vorbereitungsfenster |
+| Zeitplanung | Abhängigkeiten und die Qualität von Wiedervorlagen und Vorbereitungsfenstern |
 | Proaktivität | Relevante tägliche Hinweise, weniger Wiederholungen, geeignete Zustellkanäle |
 | Kalender | Verfügbarkeit in Auswertungen, Wiederholungen, ganztägige und abgesagte Termine |
 | Aktionen | Allgemeines Freigabe- und Ausführungssystem mit nachvollziehbarem Verlauf |

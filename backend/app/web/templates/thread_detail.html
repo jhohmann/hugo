@@ -19,6 +19,14 @@
   {% endif %}
 
   <dl class="fact-list">
+    {% if thread.review_on %}
+    <dt>Wiedervorlage</dt>
+    <dd>{{ thread.review_on|de_date }} ({{ fmt.relative_label(thread.review_on) }})</dd>
+    {% endif %}
+    {% if thread.waiting_for %}
+    <dt>Wartet auf</dt>
+    <dd>{{ thread.waiting_for }}</dd>
+    {% endif %}
     <dt>Bereich</dt>
     <dd>{% for tag in thread.tags|default([]) %}{{ fmt.THREAD_TAG_LABELS[tag] }}{% if not loop.last %}, {% endif %}{% else %}Nicht zugeordnet{% endfor %}</dd>
     {% set event_text = fmt.event_range_text(thread) %}
@@ -89,18 +97,19 @@
       {% endif %}
     </header>
     <p class="suggestion-content">{{ s.content }}</p>
+    {% if s.deferred_until %}<p class="date-hint">Zurückgestellt bis {{ s.deferred_until|de_date }}</p>{% endif %}
     {% if s.reason %}
     <p class="suggestion-reason muted">{{ s.reason }}</p>
     {% endif %}
     {% if s.status in ("open", "deferred") %}
     <footer class="actions">
-      {% if s.status == "open" %}
       <form method="post" action="/ui/suggestions/{{ s.id }}">
         <input type="hidden" name="action" value="deferred">
         <input type="hidden" name="next" value="/ui/threads/{{ thread.id }}">
+        <label for="defer-{{ s.id }}">Wieder anzeigen am</label>
+        <input id="defer-{{ s.id }}" type="date" name="deferred_until" value="{{ s.deferred_until or '' }}" required>
         <button type="submit" class="button button-small">Zurückstellen</button>
       </form>
-      {% endif %}
       <form method="post" action="/ui/suggestions/{{ s.id }}">
         <input type="hidden" name="action" value="confirmed">
         <input type="hidden" name="next" value="/ui/threads/{{ thread.id }}">

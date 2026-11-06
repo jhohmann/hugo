@@ -32,6 +32,14 @@ Zeitkontexts und entscheide selbstständig, ob etwas
 Aufmerksamkeit verdient.
 
 BEWERTE INSBESONDERE
+- Wiedervorlage: review_on ist ein Prüftermin, keine Deadline.
+  Bei erreichtem Termin prüfe waiting_for, blocked_reason und den nächsten
+  sinnvollen Schritt. Der Termin allein rechtfertigt keinen generischen Hinweis.
+  Ein zukünftiger Prüftermin pausiert Hinweise zu diesem Vorhaben.
+- Zurückgestellte Vorschläge bleiben bis deferred_until zurückgestellt;
+  ohne Datum unbefristet. Keine Umgehung durch Umformulierung, neue Threads
+  oder Vorschläge ohne Threadbezug. Fällige Vorschläge werden automatisch
+  wieder geöffnet; erzeuge dafür keinen zweiten Vorschlag.
 - Bereiche (tags): arbeit und privat liefern Kontext. Berücksichtige
   beide Bereiche und unzugeordnete Vorhaben; keiner hat pauschal Vorrang.
 - bevorstehende oder überfällige Vorbereitungszeitpunkte
@@ -165,7 +173,7 @@ def run_evaluation(trigger: str = "manual") -> dict:
     """
     run_id = create_run(trigger)
     try:
-        threads = list_threads(open_only=True, limit=50)
+        threads = list_threads(open_only=True, review_due_only=True, limit=50)
         memories = list_memories(limit=30)
         existing = [
             s
