@@ -262,6 +262,14 @@ def create_suggestion(
             }
 
 
+def count_open_suggestions() -> int:
+    """Count persisted open suggestions without delivery or lifecycle changes."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM suggestions WHERE status = 'open'")
+            return cur.fetchone()[0]
+
+
 def list_suggestions(
     status: str | None = None,
     delivery: str | None = None,

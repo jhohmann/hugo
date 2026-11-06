@@ -5,6 +5,7 @@ JSON-API; eigene Fachlogik gibt es hier nicht.
 """
 
 import logging
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, Form, Request
@@ -23,6 +24,7 @@ from app.storage.calendar_actions import (
 )
 from app.storage.database import get_messages, list_conversations
 from app.storage.suggestions import (
+    count_open_suggestions,
     list_runs,
     list_suggestions,
     update_suggestion_status,
@@ -30,6 +32,7 @@ from app.storage.suggestions import (
 from app.storage.threads import get_thread, list_threads, validate_tag
 from app.tools.dates import today_berlin
 from app.web import formatting as fmt
+from app.web.timeline import TimelineData, demo_timeline
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +50,8 @@ SUGGESTION_ACTIONS = ("confirmed", "deferred", "dismissed")
 THREAD_GROUPS = ("active", "waiting", "proposed", "completed", "archived")
 
 
-def _nav(active: str) -> dict:
-    open_count = len(list_suggestions(status="open", limit=500))
+def _nav(active: str, *, read_only: bool = False) -> dict:
+    open_count = count_open_suggestions() if read_only else len(list_suggestions(status="open", limit=500))
     return {
         "nav_active": active,
         "nav_open_suggestions": open_count,
@@ -255,6 +258,26 @@ def evaluate(request: Request):
 
 
 # --- Vorhaben ---
+
+
+@router.get("/zeitleiste")
+def timeline(request: Request, demo: bool = False, size: str = "normal"):
+    demo_enabled = os.getenv("HUGO_TIMELINE_DEMO", "false").lower() == "true"
+    if demo and not demo_enabled:
+        return templates.TemplateResponse(
+            request, "error.html",
+            {**_nav("threads", read_only=True), "status_code": 404,
+             "message": "Die lokale Zeitleisten-Demo ist nicht aktiviert."},
+            status_code=404,
+        )
+    data = demo_timeline(today_berlin()) if demo else TimelineData(demo=False, today=today_berlin())
+    if demo and size == "large":
+        data = demo_timeline(today_berlin(), large=True)
+    return templates.TemplateResponse(
+        request, "timeline.html",
+        {**_nav("threads", read_only=True), "timeline": data,
+         "demo_enabled": demo_enabled, "fmt": fmt},
+    )
 
 
 @router.get("/threads")

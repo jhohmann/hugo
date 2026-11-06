@@ -81,6 +81,14 @@ VORSCHLÄGE
 - Vorschläge bleiben intern; keine externen Aktionen.
 - Nutze search_threads, list_threads, get_thread oder
   search_memories bei Bedarf für weiteren Kontext.
+- Prüfe frühere Änderungen oder vermutete Wartezeiten bei Bedarf mit
+  list_thread_events für eine bekannte Thread-ID. since/until beziehen sich
+  auf Erfassungszeitpunkte mit Zeitzone (inklusive/exklusive Grenze).
+  Bei has_more mit next_after_id und denselben Filtern gezielt nachladen.
+  Vor Einführung des Protokolls ist der Verlauf unvollständig; fehlende
+  Ereignisse belegen keine Untätigkeit. conversation bedeutet Gesprächskontext,
+  keine Nutzerbestätigung; internal und automatic_fields sind interne Pflege.
+  Keine Wartezeiten oder Entscheidungen aus dem aktuellen Zustand erfinden.
 
 Schließe mit einer kurzen Zusammenfassung deiner Bewertung
 ab (auf Deutsch, sachlich).
@@ -95,6 +103,7 @@ _READ_TOOL_NAMES = {
     "search_threads",
     "list_threads",
     "get_thread",
+    "list_thread_events",
     "list_calendars",
     "list_events",
     "find_free_slots",

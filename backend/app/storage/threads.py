@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pgvector.psycopg import register_vector
 
 from app.storage.database import get_connection
+from app.storage.thread_events import record_thread_event
 from app.storage.embeddings import (
     embed_document,
     embed_query,
@@ -243,6 +244,8 @@ def create_thread(
             if tags:
                 _set_tags(cur, thread_id, tags)
             _link_message(cur, thread_id, source_message_id)
+            cur.execute(f"SELECT {COLUMNS} FROM threads WHERE id = %s", (thread_id,))
+            record_thread_event(cur, None, _row_to_dict(cur.fetchone()), source_message_id=source_message_id)
             return thread_id
 
 
@@ -460,13 +463,14 @@ def update_thread(
             # und Zeiträume bei Teil-Updates korrekt gegen
             # die gespeicherten Werte validieren.
             cur.execute(
-                "SELECT title, description, event_start, event_end"
+                f"SELECT {COLUMNS}"
                 " FROM threads WHERE id = %s FOR UPDATE",
                 (thread_id,),
             )
             row = cur.fetchone()
             if row is None:
                 return None
+            before = _row_to_dict(row)
 
             if tags is not None:
                 _set_tags(cur, thread_id, tags)
@@ -475,21 +479,21 @@ def update_thread(
                 new_start = (
                     event_start
                     if event_start is not None
-                    else row[2]
+                    else before["event_start"]
                 )
                 new_end = (
                     event_end
                     if event_end is not None
-                    else row[3]
+                    else before["event_end"]
                 )
                 _validate_event_range(new_start, new_end)
 
             if title is not None or description is not None:
-                new_title = title if title is not None else row[0]
+                new_title = title if title is not None else before["title"]
                 new_description = (
                     description
                     if description is not None
-                    else row[1]
+                    else before["description"]
                 )
                 sets.append("embedding = %s")
                 params.append(
@@ -522,4 +526,9 @@ def update_thread(
                     (review_on, thread_id),
                 )
             _link_message(cur, thread_id, source_message_id)
-            return _row_to_dict(updated) if updated else None
+            after = _row_to_dict(updated)
+            record_thread_event(
+                cur, before, after, source_message_id=source_message_id,
+                automatic_fields=clearable if status in CLOSED_STATUSES else (),
+            )
+            return after

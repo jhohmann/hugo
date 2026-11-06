@@ -10,6 +10,56 @@ from app.agent import assistant
 from app.storage import threads as thread_storage
 
 
+def test_event_tool_schema_and_dispatch(monkeypatch):
+    captured = {}
+
+    def read(thread_id, **kwargs):
+        captured.update(thread_id=thread_id, **kwargs)
+        return {"found": True, "events": [], "has_more": False, "next_after_id": None}
+
+    monkeypatch.setattr(assistant, "list_thread_events_page", read)
+    result = assistant.execute_tool("list_thread_events", {
+        "thread_id": 7, "since": None, "until": None, "after_id": None, "limit": 10,
+    })
+    assert result["found"]
+    assert captured == {"thread_id": 7, "since": None, "until": None, "after_id": 0, "limit": 10}
+    tool = next(t for t in assistant.TOOLS if t["name"] == "list_thread_events")
+    assert tool["strict"]
+    assert set(tool["parameters"]["required"]) == set(tool["parameters"]["properties"])
+    assert not tool["parameters"]["additionalProperties"]
+
+
+def test_event_tool_loop_can_follow_cursor(monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    pages = []
+    rounds = []
+
+    def read(thread_id, **kwargs):
+        pages.append(kwargs["after_id"])
+        return {"found": True, "events": [{"id": 12 if len(pages) == 1 else 13}],
+                "has_more": len(pages) == 1, "next_after_id": 12 if len(pages) == 1 else None}
+
+    def respond(**kwargs):
+        rounds.append(kwargs)
+        if len(rounds) == 3:
+            output = json.loads(kwargs["input"][-1]["output"])
+            assert not output["has_more"]
+            return SimpleNamespace(status="completed", output=[], output_text="Der Verlauf wurde gelesen.")
+        cursor = None if len(rounds) == 1 else json.loads(kwargs["input"][-1]["output"])["next_after_id"]
+        payload = {"type": "function_call", "name": "list_thread_events", "call_id": str(len(rounds)),
+                   "arguments": json.dumps({"thread_id": 7, "after_id": cursor, "limit": 1})}
+        call = SimpleNamespace(**payload, model_dump=lambda **_: payload)
+        return SimpleNamespace(status="completed", output=[call], output_text="")
+
+    monkeypatch.setattr(assistant, "list_thread_events_page", read)
+    monkeypatch.setattr(assistant.client.responses, "create", respond)
+    answer = assistant.run_tool_loop("Test", [], [t for t in assistant.TOOLS if t["name"] == "list_thread_events"])
+    assert answer == "Der Verlauf wurde gelesen."
+    assert pages == [0, 12]
+
+
 @pytest.fixture
 def fake_storage(monkeypatch):
     calls = {}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Zeitleiste – Hugo{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Zeitleiste</h1>
+  <a href="/ui/threads">Zur Listenansicht</a>
+</div>
+{% if timeline.demo %}
+<p class="card"><strong>Lokale Vorschau mit Beispieldaten.</strong> Alle Vorhaben und Termine sind fiktiv.</p>
+<link rel="stylesheet" href="/static/timeline.css">
+<script src="/static/timeline.js" defer></script>
+<script id="timeline-data" type="application/json">{{ timeline.model_dump(mode='json') | tojson }}</script>
+<div id="timeline-app" hidden>
+  <div class="tl-toolbar">
+    <label>Status <select id="tl-status"><option value="active">Aktiv</option><option value="inactive">Inaktiv</option><option value="all">Alle</option></select></label>
+    <label>Bereich <select id="tl-tag"><option value="all">Alle Bereiche</option><option value="arbeit">Arbeit</option><option value="privat">Privat</option></select></label>
+    <label>Sortierung <select id="tl-sort"><option value="age">Älteste zuerst</option><option value="pause">Längste Pause</option></select></label>
+    <div class="tl-zoom" role="group" aria-label="Zeitraum">
+      <button type="button" id="tl-out" aria-label="Herauszoomen">−</button>
+      <select id="tl-range" aria-label="Sichtbarer Zeitraum"><option value="30">1 Monat</option><option value="90">3 Monate</option><option value="365">1 Jahr</option><option value="all">Gesamter Verlauf</option></select>
+      <button type="button" id="tl-in" aria-label="Hineinzoomen">+</button>
+      <button type="button" id="tl-today">Heute</button>
+    </div>
+  </div>
+  <fieldset class="tl-layers"><legend>Informationsebenen</legend>
+    <label><input type="checkbox" value="activity" checked><span class="tl-key activity">●</span> Aktivitäten</label>
+    <label><input type="checkbox" value="planning" checked><span class="tl-key planning">□</span> Geplante Zeitpunkte</label>
+    <label><input type="checkbox" value="deadline" checked><span class="tl-key deadline">◆</span> Deadlines</label>
+    <label><input type="checkbox" value="idea" checked><span class="tl-key idea">◇</span> Hugos Ideen · Vorschläge</label>
+  </fieldset>
+  <div class="tl-caption"><span id="tl-count" aria-live="polite"></span><span>Durchgezogen: Vergangenheit · Gestrichelt: Zukunft</span></div>
+  <div id="tl-scroll" class="tl-scroll" tabindex="0" role="region" aria-label="Zeitleiste, horizontal und vertikal scrollbar"><div id="tl-grid"></div></div>
+  <p id="tl-empty" class="empty-state" hidden>Keine Vorhaben für diese Filter.</p>
+  <p class="tl-footnote">Punkte antippen oder auswählen, um Details zu lesen. Lücken zeigen keine erfasste Aktivität, nicht zwingend Untätigkeit.</p>
+  <details id="tl-undated"><summary>Ohne Datum <span id="tl-undated-count"></span></summary><div id="tl-undated-items"></div></details>
+  <p class="tl-footnote"><a href="?demo=1&amp;size=large">Großen Beispielbestand ausprobieren: 100 Spuren / 5.000 Aktivitäten</a></p>
+</div>
+<div id="tl-tooltip" role="tooltip" hidden></div>
+<dialog id="tl-detail"><button type="button" id="tl-close" class="button">Schließen</button><div id="tl-detail-content"></div></dialog>
+<details id="tl-fallback" open><summary>Ereignisse als Liste</summary>
+{% for thread in timeline.threads %}
+<section class="card">
+  <h2>{{ thread.title }}</h2>
+  <p>{{ fmt.thread_status_label(thread.status) }} · Angelegt: {{ thread.created_on | de_date }}</p>
+  <p>Letzte erfasste Nutzeraktivität: {{ thread.last_user_activity | de_date if thread.last_user_activity else 'Unbekannt' }}</p>
+  <ul>
+  {% for point in timeline.points if point.thread_id == thread.id %}
+    <li>
+      <strong>{{ point.title }}</strong> –
+      {% if point.start %}{{ point.start | de_date }}{% if point.end %} bis {{ point.end | de_date }}{% endif %}{% else %}Ohne Datum{% endif %}
+      {% if point.precision == 'approximate' %}(ungefähr){% endif %}
+      · {{ {'confirmed': 'Bestätigt', 'planned': 'Geplant', 'suggested': 'Vorschlag', 'unknown': 'Verbindlichkeit unbekannt'}[point.commitment] }}
+      · {{ {'user': 'Nutzer', 'calendar': 'Kalender', 'hugo': 'Hugo', 'unknown': 'Herkunft unbekannt'}[point.origin] }}
+      <p>{{ point.summary }}</p>
+    </li>
+  {% endfor %}
+  </ul>
+</section>
+{% endfor %}
+</details>
+{% else %}
+<p class="empty-state card">Die Zeitleiste ist in Vorbereitung. Vorhandene Daten sind noch nicht angebunden.</p>
+{% if demo_enabled %}<a class="button" href="/ui/zeitleiste?demo=1">Lokale Beispieldaten ansehen</a>{% endif %}
+{% endif %}
+{% endblock %}

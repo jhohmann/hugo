@@ -13,6 +13,7 @@ from app.storage.memory_search import (
     update_memory,
 )
 from app.storage.suggestions import create_suggestion, list_suggestions, update_suggestion_status
+from app.storage.thread_events import list_thread_events_page
 from app.storage.threads import (
     search_threads,
     list_threads,
@@ -58,6 +59,19 @@ Threads verfolgen längerfristige Vorhaben und laufende
 Initiativen über Gespräche hinweg.
 Reine Fakten und einzelne Entscheidungen gehören
 in Erinnerungen, nicht in Threads.
+
+- Nutze list_thread_events bei Fragen nach Änderungen, früheren Entscheidungen
+  oder Wartezeiten bedarfsweise für einen bereits identifizierten Thread.
+  Keine IDs raten und nicht bei jeder Nachricht den gesamten Verlauf laden.
+  since/until filtern den Erfassungszeitpunkt, nicht die Termine im Inhalt;
+  ISO-Zeitstempel mit Zeitzone verwenden (since inklusive, until exklusiv).
+  Bei has_more mit next_after_id und denselben Filtern nachladen, soweit für
+  die Antwort nötig. Eine einzelne Seite ist nicht der vollständige Verlauf.
+  Vor Einführung des Protokolls ist die Historie unvollständig; fehlende
+  Ereignisse beweisen keine Untätigkeit. origin=conversation bedeutet nur
+  Gesprächskontext, keine ausdrückliche Nutzerbestätigung. origin=internal
+  und automatic_fields kennzeichnen interne Pflege bzw. Bereinigungen.
+  Erfinde keine frühere Entscheidung oder Wartezeit aus dem aktuellen Zustand.
 
 - Wiedervorlage: review_on ist der nächste interne Prüftermin (ISO-Datum),
   keine feste Deadline und kein Kalendertermin. waiting_for beschreibt,
@@ -289,6 +303,24 @@ TOOLS = [
                 },
             },
             "required": ["tag", "status", "limit"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "list_thread_events",
+        "description": "Liest relevante Änderungen eines bekannten Threads mit Vorher-/Nachher-Werten. Rein lesend, älteste zuerst; bei has_more über next_after_id mit denselben Zeitfiltern nachladen.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "integer", "minimum": 1},
+                "since": {"type": ["string", "null"], "description": "Inklusive Untergrenze des Erfassungszeitpunkts als ISO-Zeitstempel mit Zeitzone; null für unbegrenzt."},
+                "until": {"type": ["string", "null"], "description": "Exklusive Obergrenze als ISO-Zeitstempel mit Zeitzone; null für unbegrenzt."},
+                "after_id": {"type": ["integer", "null"], "minimum": 0, "description": "next_after_id der vorherigen Seite; null für die erste Seite."},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+            },
+            "required": ["thread_id", "since", "until", "after_id", "limit"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -927,6 +959,14 @@ def execute_tool(
             status=arguments.get("status"),
             tag=arguments.get("tag"),
             limit=limit,
+        )
+
+    if name == "list_thread_events":
+        return list_thread_events_page(
+            arguments["thread_id"], since=arguments.get("since"),
+            until=arguments.get("until"),
+            after_id=0 if arguments.get("after_id") is None else arguments["after_id"],
+            limit=arguments.get("limit", 50),
         )
 
     if name == "get_thread":

@@ -17,6 +17,7 @@ def test_werkzeugliste_der_bewertung():
     assert "search_threads" in names
     assert "list_threads" in names
     assert "get_thread" in names
+    assert "list_thread_events" in names
     assert "search_memories" in names
 
     # … aber keine Schreibzugriffe auf Threads/Erinnerungen.
