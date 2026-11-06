@@ -1,0 +1,14 @@
+# Reverse-Proxy für den Docker-Stack. Der Domainname kommt aus HUGO_DOMAIN
+# (.env.prod). Caddy setzt Host- und X-Forwarded-*-Header automatisch.
+#
+# Öffentlich auflösbarer Name: HUGO_DOMAIN=hugo.example.com
+#   Caddy bezieht und erneuert das Zertifikat automatisch (Ports 80/443 nötig).
+# Nur lokaler Name: HUGO_DOMAIN=hugo.fritz.box, HUGO_TLS_INTERNAL=true
+#   Caddy stellt ein eigenes Zertifikat aus. Gegen Browser-Warnungen die
+#   Caddy-Root-CA einmalig auf den Clients installieren:
+#   docker compose --env-file .env.prod -f compose.prod.yaml \
+#     cp caddy:/data/caddy/pki/authorities/local/root.crt caddy-root.crt
+{$HUGO_DOMAIN} {
+	reverse_proxy web:8000
+	{$HUGO_TLS_DIRECTIVE}
+}
