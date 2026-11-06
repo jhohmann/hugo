@@ -1,15 +1,12 @@
 
-import os
 import psycopg
+from app.config import database_url
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://hugo:hugo_dev@localhost:5432/hugo"
-)
+DATABASE_URL = database_url()
 
 
 def get_connection():
-    return psycopg.connect(DATABASE_URL)
+    return psycopg.connect(DATABASE_URL, connect_timeout=5)
 
 
 def create_conversation(title=None):

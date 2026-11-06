@@ -1,50 +1,13 @@
-# .dockerignore für Hugo Backend
+# Only application sources and runtime dependencies belong in the build context.
+**
+!Dockerfile
+!backend/
+!backend/requirements.txt
+!backend/app/
+!backend/app/**
+!backend/migrations/
+!backend/migrations/**
 
-# VCS
-.git
-.gitignore
-.github
-
-# Python
-.venv
-venv
-env
-__pycache__
-*.pyc
-*.pyo
-*.egg-info
-.pytest_cache
-.mypy_cache
-*.egg
-
-# IDE
-.vscode
-.idea
-*.swp
-*.swo
-*~
-.DS_Store
-
-# Tests (werden lokal ausgeführt, nicht im Image)
-tests/
-test.py
-
-# Dokumentation (nicht nötig im Container)
-*.md
-docs/
-
-# OS
-.env
-.env.local
-.env.*.local
-credentials.json
-
-# Datenbank (wird nicht in Image gepacht)
-postgres_data/
-*.db
-*.sqlite
-
-# Compose-Dateien (nicht nötig im Image)
-compose.yaml
-compose.prod.yaml
-docker-compose.yml
+# Generated Python files inside otherwise included directories
+**/__pycache__/
+**/*.py[cod]

@@ -6,6 +6,6 @@ pgvector==0.5.1
 sentence-transformers==6.2.0
 jinja2
 python-multipart
-pytest
+python-dotenv
 httpx
 apscheduler==3.10.4

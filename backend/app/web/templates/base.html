@@ -11,6 +11,7 @@
   <header class="site-header">
     <div class="container header-inner">
       <a class="brand" href="/ui/heute">Hugo</a>
+      {% if not login_page %}
       <nav class="main-nav" aria-label="Hauptnavigation">
         <a href="/ui/chat"{% if nav_active == "chat" %} class="active" aria-current="page"{% endif %}>Chat</a>
         <a href="/ui/heute"{% if nav_active == "heute" %} class="active" aria-current="page"{% endif %}>
@@ -21,6 +22,10 @@
           Kalender{% if nav_pending_calendar_actions %}<span class="badge" title="Ausstehende Kalenderaktionen">{{ nav_pending_calendar_actions }}</span>{% endif %}
         </a>
       </nav>
+      <form method="post" action="/ui/logout" class="logout-form">
+        <button type="submit" class="button button-small">Abmelden</button>
+      </form>
+      {% endif %}
     </div>
   </header>
   <main class="container">

@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.agent.evaluation import run_evaluation
+from app.auth import AuthenticationMiddleware, router as auth_router
 from app.calendar import client as calendar_client
 from app.calendar import execution as calendar_execution
 from app.chat_service import ConversationNotFoundError, run_chat
@@ -31,6 +32,8 @@ from app.web.routes import WEB_DIR, router as web_router
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Hugo", version="0.4.0")
+app.add_middleware(AuthenticationMiddleware)
+app.include_router(auth_router)
 
 app.include_router(web_router)
 app.mount(

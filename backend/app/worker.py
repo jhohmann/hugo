@@ -10,8 +10,9 @@ import os
 import sys
 
 from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
-from app.agent.evaluation import run_evaluation
+from app.config import load_environment
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 def configure_logging():
     """Konfiguriert strukturiertes Logging für den Worker."""
     logging.basicConfig(
-        level=logging.INFO,
+        level=os.getenv("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
@@ -28,11 +29,12 @@ def scheduled_evaluation():
     """Wird täglich aufgerufen und führt die proaktive Auswertung durch."""
     logger.info("Starting scheduled evaluation run...")
     try:
+        from app.agent.evaluation import run_evaluation
         result = run_evaluation(trigger="scheduled")
         logger.info(f"Evaluation completed: {result.get('status', 'unknown')}")
         
-        if result.get("status") == "ok":
-            suggestions_count = len(result.get("suggestions", []))
+        if result.get("status") == "completed":
+            suggestions_count = result.get("suggestions_created", 0)
             logger.info(f"Generated {suggestions_count} suggestions")
         else:
             error = result.get("error")
@@ -66,6 +68,9 @@ def run_worker(schedule_hour: int = 6, schedule_minute: int = 0):
         id="daily_evaluation",
         name="Daily Proactivity Evaluation",
         timezone="UTC",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
     )
     
     # Logging für Scheduler-Events
@@ -77,11 +82,11 @@ def run_worker(schedule_hour: int = 6, schedule_minute: int = 0):
     
     scheduler.add_listener(
         log_job_executed,
-        mask="JOB_EXECUTED",
+        mask=EVENT_JOB_EXECUTED,
     )
     scheduler.add_listener(
         log_job_error,
-        mask="JOB_ERROR",
+        mask=EVENT_JOB_ERROR,
     )
     
     try:
@@ -97,6 +102,7 @@ def run_worker(schedule_hour: int = 6, schedule_minute: int = 0):
 
 
 if __name__ == "__main__":
+    load_environment()
     # Konfigurierbar via Umgebungsvariablen
     hour = int(os.getenv("SCHEDULER_HOUR", "6"))
     minute = int(os.getenv("SCHEDULER_MINUTE", "0"))

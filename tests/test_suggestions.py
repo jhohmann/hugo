@@ -1,7 +1,7 @@
 """Integrations-Tests für Vorschläge und Evaluationsläufe.
 
 Benötigen eine erreichbare PostgreSQL-Datenbank
-(inkl. Migration 005_proactivity.sql).
+(inkl. Migration 001_initial.sql).
 Werden übersprungen, wenn keine Datenbank läuft.
 """
 

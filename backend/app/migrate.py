@@ -1,144 +1,111 @@
-"""
-Idempotente Migrations-Runner für Hugo.
+"""Transactional, serialized migrations shared by development and Docker."""
 
-Führt SQL-Migrationen aus `backend/migrations/` in korrekter Reihenfolge aus.
-Jede Migration wird nur einmal pro Datenbank-Instanz ausgeführt (tracked via `schema_version` Tabelle).
-"""
-
+import argparse
+import hashlib
 import logging
-import os
 from pathlib import Path
+import re
 
 import psycopg
 
+from app.config import database_url as configured_database_url, load_environment
+
 logger = logging.getLogger(__name__)
+MIGRATION_LOCK = 727976001
+
+
+class MigrationError(Exception):
+    pass
 
 
 def get_migrations_dir() -> Path:
-    """Gibt das Migrationsverzeichnis zurück."""
-    return Path(__file__).parent.parent / "migrations"
+    return Path(__file__).resolve().parents[1] / "migrations"
 
 
-def get_migration_files() -> list[tuple[int, Path]]:
-    """
-    Liest alle SQL-Migrationsdateien, sortiert nach Nummer.
-    Erwartet: 00X_*.sql Format
-    """
-    migrations_dir = get_migrations_dir()
+def get_migration_files(directory: Path | None = None) -> list[tuple[int, Path]]:
     files = []
-    
-    for sql_file in sorted(migrations_dir.glob("*.sql")):
-        try:
-            # Extrahiere Versionsnummer aus Dateiname (z.B. "002_embeddings.sql" → 2)
-            version_str = sql_file.stem.split("_")[0]
-            version = int(version_str)
-            files.append((version, sql_file))
-        except (ValueError, IndexError):
-            logger.warning(f"Skipped file with unexpected name format: {sql_file.name}")
-    
+    for path in (directory or get_migrations_dir()).glob("*.sql"):
+        match = re.fullmatch(r"([0-9]+)_[a-z0-9_]+\.sql", path.name)
+        if not match or int(match[1]) < 1:
+            raise MigrationError(f"Ungültiger Migrationsname: {path.name}")
+        files.append((int(match[1]), path))
+    files.sort()
+    versions = [version for version, _ in files]
+    if not versions or versions[0] != 1 or len(set(versions)) != len(versions):
+        raise MigrationError("Migrationen müssen bei 001 beginnen und eindeutige Nummern haben.")
     return files
 
 
-def create_schema_version_table(conn):
-    """Erstellt die `schema_version` Tabelle, falls sie nicht existiert."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS schema_version (
-                id SERIAL PRIMARY KEY,
-                version INT NOT NULL UNIQUE,
-                filename TEXT NOT NULL,
-                applied_at TIMESTAMP DEFAULT NOW()
-            )
-            """
-        )
-    conn.commit()
-
-
-def run_migrations(database_url: str | None = None) -> dict:
-    """
-    Führt alle ausstehenden Migrationen aus.
-    
-    Args:
-        database_url: PostgreSQL Verbindungs-String
-                      (Default: DATABASE_URL Umgebungsvariable oder dev-default)
-    
-    Returns:
-        dict mit 'status' ('ok' oder 'error'), 'applied' (Liste), 'skipped' (Liste), 'error' (falls error)
-    """
-    if database_url is None:
-        database_url = os.getenv("DATABASE_URL", "postgresql://hugo:hugo_dev@localhost:5432/hugo")
-    
-    result = {
-        "status": "ok",
-        "applied": [],
-        "skipped": [],
-        "error": None,
-    }
-    
+def run_migrations(database_url: str | None = None, *, directory: Path | None = None) -> dict:
+    result = {"status": "ok", "applied": [], "skipped": [], "error": None}
+    current = None
     try:
-        conn = psycopg.connect(database_url)
-        logger.info("Connected to database")
-        
-        # Erstelle schema_version Tabelle
-        create_schema_version_table(conn)
-        
-        # Lese alle Migration-Dateien
-        migrations = get_migration_files()
-        logger.info(f"Found {len(migrations)} migration files")
-        
-        # Lese bereits angewendete Versionen
-        with conn.cursor() as cur:
-            cur.execute("SELECT version FROM schema_version ORDER BY version")
-            applied_versions = {row[0] for row in cur.fetchall()}
-        
-        # Führe ausstehende Migrationen aus
-        for version, filepath in migrations:
-            if version in applied_versions:
-                logger.info(f"Migration {version} ({filepath.name}) already applied")
-                result["skipped"].append({"version": version, "file": filepath.name})
-                continue
-            
-            try:
-                sql_content = filepath.read_text()
-                logger.info(f"Applying migration {version} ({filepath.name})")
-                
-                with conn.cursor() as cur:
-                    # Führe SQL aus
-                    cur.execute(sql_content)
-                    # Markiere Migration als angewendet
-                    cur.execute(
-                        "INSERT INTO schema_version (version, filename) VALUES (%s, %s)",
-                        (version, filepath.name)
+        migrations = []
+        for version, path in get_migration_files(directory):
+            # Universal newlines make hashes portable across Windows/Linux.
+            source = path.read_text(encoding="utf-8")
+            checksum = hashlib.sha256(source.encode("utf-8")).hexdigest()
+            migrations.append((version, path.name, source, checksum))
+        with psycopg.connect(
+            database_url or configured_database_url(), connect_timeout=5, autocommit=True,
+        ) as conn:
+            conn.execute("SET lock_timeout = '30s'")
+            conn.execute("SELECT pg_advisory_lock(%s)", (MIGRATION_LOCK,))
+            # Session lock is held across transactions until disconnect.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    version INTEGER PRIMARY KEY,
+                    filename TEXT NOT NULL,
+                    checksum TEXT NOT NULL,
+                    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            applied = conn.execute(
+                "SELECT version, filename, checksum FROM schema_version ORDER BY version"
+            ).fetchall()
+            expected = [(version, name, checksum) for version, name, _, checksum in migrations]
+            if applied != expected[:len(applied)]:
+                raise MigrationError(
+                    "Migrationshistorie passt nicht zum Code: angewendete Dateien fehlen, "
+                    "wurden verändert oder die Datenbank ist neuer. Keine Migration ausgeführt."
+                )
+            applied_versions = {row[0] for row in applied}
+            for version, name, source, checksum in migrations:
+                current = name
+                item = {"version": version, "file": name}
+                if version in applied_versions:
+                    result["skipped"].append(item)
+                    continue
+                with conn.transaction():
+                    conn.execute(source)
+                    conn.execute(
+                        "INSERT INTO schema_version (version, filename, checksum) VALUES (%s, %s, %s)",
+                        (version, name, checksum),
                     )
-                
-                conn.commit()
-                result["applied"].append({"version": version, "file": filepath.name})
-                logger.info(f"Migration {version} applied successfully")
-                
-            except Exception as e:
-                conn.rollback()
-                error_msg = f"Failed to apply migration {version} ({filepath.name}): {str(e)}"
-                logger.error(error_msg)
-                result["status"] = "error"
-                result["error"] = error_msg
-                conn.close()
-                return result
-        
-        conn.close()
-        logger.info("All migrations completed successfully")
-        
-    except Exception as e:
-        error_msg = f"Database connection error during migrations: {str(e)}"
-        logger.error(error_msg)
-        result["status"] = "error"
-        result["error"] = error_msg
-    
+                result["applied"].append(item)
+                logger.info("Migration angewendet: %s", name)
+    except (MigrationError, OSError, psycopg.Error, ValueError) as exc:
+        # Connection exceptions can contain credentials; don't emit their text.
+        detail = str(exc) if isinstance(exc, MigrationError) else type(exc).__name__
+        if isinstance(exc, psycopg.Error) and exc.sqlstate:
+            detail += f" (SQLSTATE {exc.sqlstate})"
+        result.update(status="error", error=f"{current or 'Migrationen'}: {detail}")
+        logger.error("%s", result["error"])
     return result
 
 
-if __name__ == "__main__":
-    # Lokales Testen: python -m app.migrate
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Hugo-Datenbank initialisieren oder aktualisieren")
+    parser.add_argument("--env-file", help="Standard: .env im Projektordner, sofern vorhanden")
+    args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
+    load_environment(args.env_file)
     result = run_migrations()
-    print(f"\nMigration Result:\n{result}")
+    if result["status"] != "ok":
+        return 1
+    logger.info("Schema aktuell: %d angewendet, %d bereits vorhanden", len(result["applied"]), len(result["skipped"]))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

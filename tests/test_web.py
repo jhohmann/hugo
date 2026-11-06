@@ -14,11 +14,15 @@ from app.main import app
 from app.web import formatting as fmt
 from app.web import routes as web_routes
 from app import chat_service
+from app import auth
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+def client(monkeypatch):
+    # These tests exercise authenticated UI behavior; login itself has separate tests.
+    monkeypatch.setattr(auth, "password_hash", lambda: "test-configured")
+    monkeypatch.setattr(auth.storage, "valid_session", lambda *_: True)
+    return TestClient(app, headers={"Origin": "http://testserver"})
 
 
 @pytest.fixture

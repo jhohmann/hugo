@@ -1,8 +1,7 @@
 """Integrations-Tests für die Thread-Storage-Schicht.
 
 Benötigen eine erreichbare PostgreSQL-Datenbank
-(inkl. Migrationen 003_thread_embeddings.sql und
-004_temporal.sql).
+(inkl. Migration 001_initial.sql).
 Werden übersprungen, wenn keine Datenbank läuft.
 """
 

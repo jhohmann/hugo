@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["backend"]
+norecursedirs = [".git", ".venv", ".pytest_cache", "pytest-cache-files-*", "backups"]
