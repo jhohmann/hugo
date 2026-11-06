@@ -652,6 +652,46 @@ die Zuordnung unverändert. Suchen und Auflisten unterstützen den optionalen Fi
 
 Die Agentenwerkzeuge `search_threads`, `list_threads`, `get_thread`, `create_thread` und `update_thread` verwenden IDs aus vorherigen Such- oder Leseaufrufen. Updates verändern nur ausdrücklich mitgegebene Felder.
 
+### Zeitleisten-Vorschau
+
+`/ui/zeitleiste` ist die Vorbereitung für eine grafische Vorhabenansicht.
+Die lokale Datenvorschau unter `/ui/zeitleiste?demo=1` verwendet ausschließlich
+gekennzeichnete, fiktive Beispieldaten im Speicher. Zum Aktivieren auf dem
+Test-PC `HUGO_TIMELINE_DEMO=true` setzen und den Entwicklungsserver neu starten.
+Standardmäßig ist der Demo-Modus deaktiviert; die Anmeldung bleibt erforderlich.
+Die Vorschau und ihre Navigation verändern weder Vorschläge noch Vorhaben.
+Die grafische Darstellung und die Anbindung realer Daten stehen noch aus.
+
+### Ereignisprotokoll
+
+`thread_events` erfasst Erstellung und relevante Änderungen durch die
+Thread-Speicherfunktionen. Ein Speichervorgang erzeugt einen Eintrag mit den
+tatsächlich geänderten Feldern, ihren vorherigen und neuen Werten sowie dem
+Erfassungszeitpunkt. Zustand und Ereignis werden gemeinsam gespeichert oder
+bei einem Fehler gemeinsam zurückgerollt. Unveränderte Werte, Embeddings und
+Lesezugriffe erzeugen keine Ereignisse.
+
+Eine verknüpfte Quellnachricht kennzeichnet den Gesprächskontext; ohne sie ist
+die Herkunft interne Pflege. Das belegt keine ausdrückliche Nutzerbestätigung.
+Beim Abschluss automatisch geleerte Wartefelder werden zusätzlich markiert.
+Das Protokoll beginnt mit Migration `005_thread_events.sql`; frühere Änderungen
+werden nicht aus dem aktuellen Zustand rekonstruiert. Direkte SQL-Änderungen
+außerhalb der Speicherfunktionen werden nicht protokolliert. Beim Löschen eines
+Threads werden auch dessen Ereignisse entfernt.
+
+Das lesende Agentenwerkzeug `list_thread_events` steht im Chat und in der
+proaktiven Auswertung zur Verfügung. Hugo kann damit bei Bedarf frühere
+Änderungen oder Wartezeiten eines bekannten Vorhabens nachvollziehen.
+Die Ergebnisse enthalten Herkunft, Vorher-/Nachher-Werte und Hinweise auf
+automatische Bereinigungen. Fehlende Einträge belegen keine Untätigkeit.
+
+Pro Abruf werden höchstens 100 Ereignisse in Erfassungsreihenfolge geliefert.
+`has_more` und `next_after_id` ermöglichen das Nachladen mit denselben Filtern.
+`since` (inklusive) und `until` (exklusive) begrenzen den Erfassungszeitpunkt;
+beide erwarten ISO-Zeitstempel mit Zeitzone. Ein unbekannter Thread wird von
+einem vorhandenen Thread ohne passende Ereignisse unterschieden. Abfragen
+verändern keine Daten. Die grafische Zeitleiste ist noch nicht angebunden.
+
 ### Zeitplanung
 
 | Feld | Bedeutung |
