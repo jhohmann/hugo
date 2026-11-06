@@ -20,4 +20,5 @@ echo "Backup: $backup"
 # On failure the apps remain stopped; SQL rollback protects the failed migration.
 "${compose[@]}" run --rm --no-deps migrate
 "${compose[@]}" up -d --no-deps --wait web worker
+"${compose[@]}" up -d caddy
 "${compose[@]}" ps

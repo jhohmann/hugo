@@ -15,6 +15,12 @@ x-app-env: &app-env
   GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
   GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://127.0.0.1:8000/ui/kalender/auth/callback}
 
+x-caddy-env: &caddy-env
+  HUGO_DOMAIN: ${HUGO_DOMAIN:?HUGO_DOMAIN fehlt}
+  # HUGO_TLS_INTERNAL=true stellt ein Zertifikat der Caddy-internen CA aus
+  # (nur lokale Namen). Leer lassen für automatische Let's-Encrypt-Zertifikate.
+  HUGO_TLS_DIRECTIVE: ${HUGO_TLS_INTERNAL:+tls internal}
+
 x-app: &app
   image: ${HUGO_IMAGE:-hugo:local}
   build: .
@@ -56,7 +62,8 @@ services:
       <<: *app-env
       HUGO_PASSWORD_HASH: ${HUGO_PASSWORD_HASH:?HUGO_PASSWORD_HASH fehlt}
       HUGO_COOKIE_SECURE: ${HUGO_COOKIE_SECURE:-true}
-      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      # Caddy läuft im selben Compose-Netz; dessen Subnetz muss vertraut sein.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.16.0.0/12}
     ports:
       - "${WEB_PORT:-127.0.0.1:8000}:8000"
     volumes:
@@ -92,6 +99,29 @@ services:
       driver: json-file
       options: {max-size: "30m", max-file: "3"}
 
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment: *caddy-env
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [hugo_internal, hugo_external]
+    depends_on:
+      web: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
 networks:
   hugo_internal:
     internal: true
@@ -100,3 +130,5 @@ networks:
 volumes:
   hugo_postgres_data: {}
   model_cache: {}
+  caddy_data: {}
+  caddy_config: {}

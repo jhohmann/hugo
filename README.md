@@ -146,7 +146,8 @@ tests/                  Automatisierte Tests
 scripts/                Updates und manuelle Diagnose
 pyproject.toml          Testkonfiguration
 compose.yaml            Lokale Entwicklungsdatenbank
-compose.prod.yaml       Docker-Stack mit Datenbank, Migration, Web und Worker
+compose.prod.yaml       Docker-Stack mit Datenbank, Migration, Web, Worker und Caddy
+Caddyfile               Reverse-Proxy-Konfiguration (Domain aus HUGO_DOMAIN)
 Dockerfile              Gemeinsames Anwendungsimage
 ```
 
@@ -315,7 +316,10 @@ Für den externen Betrieb die entsprechende HTTPS-Adresse verwenden. Ohne OAuth-
 |---|---|
 | `WEB_PORT` | `127.0.0.1:8000`; Format `[BIND_ADRESSE:]PORT` |
 | `HUGO_IMAGE` | `hugo:local`; gemeinsames Image für Web, Worker und Migration |
-| `FORWARDED_ALLOW_IPS` | `127.0.0.1`; auf die tatsächliche vertrauenswürdige Proxy-IP einstellen |
+| `HUGO_DOMAIN` | Öffentlicher Name für den Caddy-Proxy, erforderlich |
+| `HUGO_TLS_INTERNAL` | `true` für lokale Namen ohne öffentliche Auflösung (Caddy-interne CA) |
+| `HTTP_PORT` / `HTTPS_PORT` | Veröffentlichte Proxy-Ports, Standard `80`/`443` |
+| `FORWARDED_ALLOW_IPS` | `172.16.0.0/12` (Docker-Netz des Caddy-Proxys) |
 
 Vorlagen: [`.env.example`](.env.example) für lokale Entwicklung und [`.env.prod.template`](.env.prod.template) für Docker.
 
@@ -346,7 +350,8 @@ In `.env.prod` eintragen:
 - Eigenes DB-Passwort, beispielsweise erzeugt mit `openssl rand -hex 32`
 - OpenAI-API-Schlüssel
 - Erzeugten Passwort-Hash
-- Bei Bedarf Google-OAuth- und Proxy-Konfiguration
+- `HUGO_DOMAIN` für den Caddy-Proxy (siehe [Reverse-Proxy und HTTPS](#reverse-proxy-und-https))
+- Bei Bedarf Google-OAuth-Konfiguration
 
 ### Start
 
@@ -367,14 +372,16 @@ curl --fail http://127.0.0.1:8000/health
 | `migrate` | Einmaliger Schemalauf | Datenbank gesund |
 | `web` | FastAPI/Uvicorn | Migration erfolgreich |
 | `worker` | Tägliche Auswertung | Migration erfolgreich |
+| `caddy` | Reverse-Proxy mit TLS | Web gesund |
 
-Der Migrationscontainer beendet sich bei Erfolg mit Exitcode 0. Die Datenbank hat keinen veröffentlichten Port; der Webserver bindet standardmäßig an Loopback.
+Der Migrationscontainer beendet sich bei Erfolg mit Exitcode 0. Die Datenbank hat keinen veröffentlichten Port; der Webserver bindet standardmäßig an Loopback. Caddy veröffentlicht die Ports 80 und 443 und leitet an `web:8000` weiter.
 
 ### Speicherung und Netzwerk
 
 - `hugo_postgres_data` enthält die Datenbank.
 - `model_cache` hält die heruntergeladenen Modelle.
-- Web und Worker verwenden ein internes DB-Netz und ein zusätzliches Netz für ausgehende Verbindungen.
+- `caddy_data` und `caddy_config` enthalten Zertifikate und Laufzeitdaten des Proxys.
+- Web, Worker und Caddy verwenden ein internes DB-Netz und ein zusätzliches Netz für ausgehende Verbindungen.
 - Das Image verwendet Python 3.12, CPU-PyTorch und den Nutzer `hugo` ohne Root-Rechte.
 - Eine GPU ist nicht erforderlich.
 
@@ -387,6 +394,7 @@ Compose-Volumes gehören zum jeweiligen Projektnamen. Ein anderer Projektname ve
 | Datenbank | Alle 5 Sekunden | 10 MB × 3 |
 | Web | Alle 30 Sekunden, 90 Sekunden Startfrist | 50 MB × 5 |
 | Worker | Kein HTTP-Healthcheck | 30 MB × 3 |
+| Caddy | Admin-API alle 30 Sekunden | 10 MB × 3 |
 
 `/health` prüft den Webprozess, nicht die Datenbank oder Anmeldung. `restart: unless-stopped` startet beendete Prozesse neu; ein Status `unhealthy` allein löst keinen Neustart aus.
 
@@ -533,44 +541,29 @@ Zwischenzeitliche Änderungen vor einer Wiederherstellung sichern und gegebenenf
 
 ## Reverse-Proxy und HTTPS
 
-Für externen Zugriff HTTPS verwenden. Das folgende nginx-Beispiel leitet HTTP-Anfragen an den lokalen Webserver weiter:
-
-```nginx
-server {
-    listen 80;
-    server_name hugo.example.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 90s;
-    }
-}
-```
+Für externen Zugriff HTTPS verwenden. Der Docker-Stack enthält Caddy als Reverse-Proxy; die Konfiguration liegt in der [Caddyfile](Caddyfile) und leitet an `web:8000` weiter. Caddy setzt die benötigten `Host`- und `X-Forwarded-*`-Header automatisch.
 
 ### TLS einrichten
 
-1. nginx sowie `certbot` und `python3-certbot-nginx` installieren.
-2. Site aktivieren und mit `nginx -t` prüfen.
-3. Zertifikat einrichten:
+1. `HUGO_DOMAIN` in `.env.prod` auf den öffentlichen Namen setzen.
+2. Öffentlich auflösbarer Name: DNS auf den Docker-Host zeigen lassen, Ports 80 und 443 erreichbar machen. Caddy bezieht und erneuert das Zertifikat automatisch.
+3. Nur lokaler Name (z. B. `hugo.fritz.box`): `HUGO_TLS_INTERNAL=true` setzen. Caddy stellt ein Zertifikat der eigenen CA aus. Gegen Browser-Warnungen die Root-CA einmalig auf den Clients installieren:
 
    ```bash
-   certbot --nginx -d hugo.example.com
+   docker compose --env-file .env.prod -f compose.prod.yaml \
+     cp caddy:/data/caddy/pki/authorities/local/root.crt caddy-root.crt
    ```
 
-4. `HUGO_COOKIE_SECURE=true` setzen.
+4. `HUGO_COOKIE_SECURE=true` setzen (Standard).
 5. Google-Callback-URL auf die HTTPS-Adresse umstellen.
 
 ### Proxy-Vertrauen und Ports
 
-- `FORWARDED_ALLOW_IPS` auf die tatsächliche Proxy-IP oder dessen vertrauenswürdiges Netz setzen.
-- Bei nginx auf dem Docker-Host kann dies die Bridge-Gateway-IP sein.
-- Den Backend-Port nur für den Proxy erreichbar machen.
+- `FORWARDED_ALLOW_IPS` muss das Docker-Netz des Caddy-Proxys umfassen; Standard `172.16.0.0/12`.
+- Den Backend-Port 8000 nur für den Proxy erreichbar machen (`WEB_PORT=127.0.0.1:8000`).
 - PostgreSQL-Port 5432 nicht extern veröffentlichen.
 - Falsche Host-/Protokollangaben können bei Formularen HTTP 403 auslösen.
+- Mit `HUGO_COOKIE_SECURE=true` ist eine Anmeldung über unverschlüsseltes HTTP (z. B. direkt über die IP) nicht mehr möglich; der Browser speichert das Secure-Cookie dort nicht.
 
 Hugo verwendet keine WebSockets.
 
