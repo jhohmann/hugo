@@ -10,24 +10,57 @@
 .logout-form { margin-left: auto; }
 .header-inner { flex-wrap: wrap; }
 
+
 :root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --text: #1c1e21;
-  --muted: #6b7280;
-  --border: #dde1e6;
-  --accent: #2563eb;
-  --accent-text: #ffffff;
-  --danger: #b91c1c;
-  --danger-bg: #fef2f2;
-  --ok: #15803d;
-  --warn: #b45309;
-  --bubble-user: #2563eb;
-  --bubble-user-text: #ffffff;
-  --bubble-assistant: #e9edf2;
-  --radius: 10px;
+    --bg: #f7f9fa;
+    --surface: #ffffff;
+    --text: #202b35;
+    --muted: #64748b;
+    --border: #dce3e8;
+
+    /* Hugo Markenfarben */
+    --accent: #004d70;
+    --accent-text: #ffffff;
+
+    /* Statusfarben */
+    --danger: #c0392b;
+    --danger-bg: #fff0ee;
+    --ok: #238636;
+    --warn: #a66300;
+
+    /* Chat */
+    --bubble-user: #004d70;
+    --bubble-user-text: #ffffff;
+    --bubble-assistant: #edf2f5;
 }
 
+
+@media (prefers-color-scheme: dark) {
+:root {
+    --bg: #14171b;
+    --surface: #1d2127;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --border: #333a44;
+
+    /* Hugo Markenfarben */
+    --accent: #2995c3;
+    --accent-text: #ffffff;
+
+    /* Statusfarben */
+    --danger: #f87171;
+    --danger-bg: #2a1d1f;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+
+    /* Chat */
+    --bubble-user: #17688b;
+    --bubble-user-text: #ffffff;
+    --bubble-assistant: #25343d;   
+  }
+}
+
+/*
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #14171b;
@@ -46,7 +79,7 @@
     --bubble-assistant: #2a3038;
   }
 }
-
+*/
 * { box-sizing: border-box; }
 
 body {
@@ -96,6 +129,13 @@ body {
   font-weight: 700;
   color: var(--text);
   text-decoration: none;
+}
+
+.brand-logo {
+    display: block;
+    width: auto;
+    height: 40px;
+    max-width: 180px;
 }
 
 .main-nav { display: flex; gap: 4px; }
