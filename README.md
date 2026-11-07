@@ -180,6 +180,10 @@ Die Oberfläche unter `/ui` führt nach der Anmeldung zur Ansicht **Heute**. Inh
 - Die 50 jüngsten Unterhaltungen anhand ihrer ersten Nutzernachricht auswählen.
 - Entwurf bei einem Agentenfehler erhalten.
 - Mit **Enter** senden, mit **Shift+Enter** einen Zeilenumbruch einfügen.
+- Mit JavaScript bleiben das Chatende und das Eingabefeld beim Laden und bei
+  Größenänderungen sichtbar. Hochscrollen pausiert das Nachführen; am Ende des
+  Chats oder beim Senden wird es wieder aktiviert. Antworten erscheinen derzeit
+  vollständig nach dem Neuladen, nicht als Textstream.
 
 ### Heute
 

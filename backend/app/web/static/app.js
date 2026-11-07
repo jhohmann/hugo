@@ -25,11 +25,54 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  // Chat: Verlauf ans Ende scrollen, Enter sendet (Umschalt+Enter = Zeilenumbruch).
-  var messages = document.getElementById("messages");
-  if (messages) {
-    messages.scrollIntoView({ block: "end" });
+  // Erst das mobile Layout herstellen, danach die Scrollposition bestimmen.
+  var panel = document.querySelector(".conversation-panel");
+  if (panel && window.matchMedia("(max-width: 760px)").matches) {
+    panel.removeAttribute("open");
   }
+
+  // Das Eingabefeld gehört zum Scrollziel, damit es die Antwort nicht verdeckt.
+  var chatMain = document.querySelector(".chat-main");
+  if (chatMain) {
+    var followChat = true;
+    var previousScrollY = window.scrollY;
+
+    function scrollChatToEnd() {
+      if (!followChat) return;
+      chatMain.scrollIntoView({ block: "end", behavior: "instant" });
+      previousScrollY = window.scrollY;
+    }
+
+    window.addEventListener("scroll", function () {
+      if (window.scrollY < previousScrollY) {
+        followChat = false;
+      } else if (chatMain.getBoundingClientRect().bottom <= window.innerHeight + 48) {
+        followChat = true;
+      }
+      previousScrollY = window.scrollY;
+    }, { passive: true });
+
+    // Auch nachgeladenes Layout und wachsende Nachrichten berücksichtigen.
+    if ("ResizeObserver" in window) {
+      var chatResizeObserver = new ResizeObserver(scrollChatToEnd);
+      chatResizeObserver.observe(chatMain);
+      var header = document.querySelector(".site-header");
+      if (header) chatResizeObserver.observe(header);
+      if (panel) chatResizeObserver.observe(panel);
+    }
+    window.addEventListener("load", scrollChatToEnd);
+    window.addEventListener("resize", scrollChatToEnd);
+    var chatForm = chatMain.querySelector(".chat-form");
+    if (chatForm) {
+      chatForm.addEventListener("submit", function () {
+        followChat = true;
+        scrollChatToEnd();
+      });
+    }
+    scrollChatToEnd();
+  }
+
+  // Enter sendet (Umschalt+Enter = Zeilenumbruch).
   var chatInput = document.getElementById("chat-message");
   if (chatInput) {
     chatInput.addEventListener("keydown", function (event) {
@@ -38,11 +81,5 @@ document.addEventListener("DOMContentLoaded", function () {
         chatInput.form.requestSubmit();
       }
     });
-  }
-
-  // Auf kleinen Bildschirmen die Unterhaltungsliste einklappen.
-  var panel = document.querySelector(".conversation-panel");
-  if (panel && window.matchMedia("(max-width: 760px)").matches) {
-    panel.removeAttribute("open");
   }
 });
