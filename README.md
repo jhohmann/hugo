@@ -780,6 +780,39 @@ Kalenderaktionen haben den Status `pending`, `confirmed`, `rejected`, `executed`
 - Zeitzonen und exklusive Enddaten ganztägiger Google-Termine werden berücksichtigt.
 - Access- und Refresh-Tokens bleiben in PostgreSQL und werden nicht an das Modell übergeben.
 
+Das lesende Agentenwerkzeug `search_events` sucht im Chat und in proaktiven
+Auswertungen nach bereits eingetragenen Terminen. Der Zeitraum wird bei jedem
+Aufruf aus dem aktuellen Datum in **Europe/Berlin** bestimmt: vom 1. Januar des
+laufenden Jahres bis zum 1. Januar des übernächsten Jahres (exklusiv), also
+beispielsweise das gesamte Jahr 2026 und 2027. Vergangene Termine des laufenden
+Jahres sind eingeschlossen; über die Jahresgrenze reichende Termine können
+ebenfalls enthalten sein.
+
+- `query` ist ein kurzer Suchbegriff (1–200 Zeichen). Die
+  [Google-Freitextsuche](https://developers.google.com/workspace/calendar/api/v3/reference/events/list)
+  durchsucht unter anderem Titel, Beschreibung, Ort und Teilnehmer. Sie ist
+  keine semantische Suche; Hugo wählt Begriffe und mögliche Alternativen.
+- `calendar_id=null` durchsucht alle Kalender der verbundenen Kalenderliste,
+  einschließlich ausgeblendeter Kalender. Eine ID beschränkt die Suche.
+  Kalender mit ausschließlich Frei-/Belegt-Rechten werden unter
+  `unsearchable_calendars` ausgewiesen. Private Inhalte bleiben von den
+  Google-Leserechten abhängig.
+- Alle Google-Ergebnisseiten werden nachgeladen. Serien werden in einzelne
+  Vorkommen aufgelöst; abgesagte Termine werden ausgeschlossen. Die Treffer
+  werden kalenderübergreifend chronologisch sortiert.
+- `limit` (1–100, normalerweise 20) und `offset` (anfangs 0) begrenzen nur die
+  Antwort an das Modell. `total_count`, `has_more` und `next_offset` ermöglichen
+  das Nachladen mit denselben Suchparametern. `time_min`, `time_max` und
+  `searched_calendars` dokumentieren den Suchbereich.
+- Jeder Abruf sucht erneut live; es gibt keinen lokalen Terminindex oder
+  festen Ergebnissnapshot. Änderungen zwischen Abrufen können die Reihenfolge
+  verschieben. Bei einem API-Fehler wird keine Teilliste als erfolgreiche Suche
+  zurückgegeben. Andere Zeiträume bleiben über `list_events` abrufbar; dessen
+  bisherige Ergebnisbegrenzung wird durch das neue Werkzeug nicht verändert.
+
+Beispiel im Chat: „Wann ist meine nächste Fortbildung?“ Die Suche benötigt
+keine Schreibfreigabe und verändert keine Termine.
+
 ### Sitzungen und Schema
 
 | Tabelle | Inhalt |
@@ -882,6 +915,17 @@ Im Projektordner:
 | Docker | Gebautes Image und ausdrücklich aktivierter Smoke-Test |
 
 Datenbanktests werden ohne erreichbares PostgreSQL übersprungen. Tests nicht gegen eine produktive Datenbank ausführen.
+
+Verifikation am 07.11.2026: `tests/test_calendar_search.py`,
+`tests/test_thread_tools.py`, `tests/test_evaluation.py` und `tests/test_dates.py`
+liefen mit **62 bestandenen Tests**. Die neue Kalendersuche wurde vom
+Agentenwerkzeug bis zu simulierten Google-Antworten geprüft, einschließlich
+mehrerer Kalender und Ergebnisseiten, mehr als 100 Treffern, Berliner
+Jahreswechsel, ganztägiger Termine, fehlender Leserechte und API-Fehler.
+Google-Serienauflösung und Textsuche werden über die API-Parameter angefordert;
+deren tatsächliches Verhalten und die selbstständige Werkzeugwahl des Modells
+sind noch nicht live verifiziert. Nächster Praxistest: einen bekannten Termin
+im laufenden und einen im folgenden Jahr über den Chat finden lassen.
 
 Gezielt Start, Migration und Anmeldung prüfen:
 

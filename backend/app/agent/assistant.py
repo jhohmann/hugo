@@ -154,6 +154,17 @@ lesen und Terminänderungen vorschlagen.
 - list_calendars, list_events und find_free_slots liefern
   Kalenderinhalte und freie Zeitfenster. Berücksichtige
   Termine bei Zeitplanung und Konflikten.
+- Nutze search_events, um eingetragene Termine anhand von Suchbegriffen
+  zu finden, besonders wenn ihr genaues Datum unbekannt ist. Es durchsucht
+  das gesamte aktuelle und folgende Kalenderjahr, auch vergangene Termine.
+  Wähle kurze passende Begriffe; bei fehlenden Treffern versuche andere
+  Formulierungen. Die Suche ist eine Textsuche, keine semantische Suche.
+  Bei has_more kannst du mit next_offset und denselben Suchparametern
+  nachladen. Behaupte bei unvollständiger Sichtung keine Vollständigkeit.
+  Beachte den zurückgegebenen Zeitraum (time_max exklusiv) und
+  unsearchable_calendars (nur Frei-/Belegt-Zugriff). Keine Treffer belegen
+  nicht, dass außerhalb des Suchzeitraums oder der lesbaren Inhalte kein
+  Termin existiert. Für andere Zeiträume verwende list_events.
 - Schreibzugriffe erfolgen NIEMALS direkt. Erzeuge mit
   propose_event_create, propose_event_update oder
   propose_event_delete einen Änderungsvorschlag. Der Nutzer
@@ -672,6 +683,44 @@ TOOLS = [
     },
     {
         "type": "function",
+        "name": "search_events",
+        "description": (
+            "Sucht eingetragene Google-Kalendertermine nach Text in Titel, "
+            "Beschreibung, Ort oder Teilnehmern im gesamten aktuellen und "
+            "folgenden Kalenderjahr (Europe/Berlin). Auch vergangene, "
+            "ganztägige und einzelne Serientermine; keine abgesagten. "
+            "Standardmäßig alle Kalender. Liefert Treffer, Suchzeitraum, "
+            "total_count, has_more und next_offset zum Nachladen."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Kurzer Suchbegriff, z. B. Zahnarzt oder Fortbildung.",
+                },
+                "calendar_id": {
+                    "type": ["string", "null"],
+                    "description": "Kalender-ID aus list_calendars; null für alle.",
+                },
+                "limit": {
+                    "type": "integer", "minimum": 1, "maximum": 100,
+                    "description": "Treffer pro Abruf; normalerweise 20.",
+                },
+                "offset": {
+                    "type": "integer", "minimum": 0,
+                    "description": "Zuerst 0, danach next_offset mit denselben Filtern.",
+                },
+            },
+            "required": ["query", "calendar_id", "limit", "offset"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
         "name": "find_free_slots",
         "description": (
             "Ermittelt freie Zeitfenster über alle Kalender "
@@ -1066,6 +1115,17 @@ def execute_tool(
                 ),
                 calendar_id=arguments.get("calendar_id"),
                 limit=limit,
+            )
+        except calendar_client.CalendarNotConnectedError:
+            return {"error": "not_connected"}
+
+    if name == "search_events":
+        try:
+            return calendar_execution.search_events(
+                arguments["query"],
+                calendar_id=arguments.get("calendar_id"),
+                limit=arguments.get("limit", 20),
+                offset=arguments.get("offset", 0),
             )
         except calendar_client.CalendarNotConnectedError:
             return {"error": "not_connected"}

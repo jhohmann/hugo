@@ -13,7 +13,7 @@ from datetime import date, datetime, time, timedelta
 
 from app.calendar import client, service
 from app.storage import calendar_actions as store
-from app.tools.dates import BERLIN
+from app.tools.dates import BERLIN, today_berlin
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,66 @@ def get_events(
         )
     events.sort(key=lambda e: e["start"] or "")
     return events[:limit]
+
+
+def search_events(
+    query: str,
+    calendar_id: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict:
+    """Termine im aktuellen und folgenden Kalenderjahr live durchsuchen."""
+    if not isinstance(query, str) or not query.strip() or len(query) > 200:
+        raise ValueError("Suchbegriff muss 1 bis 200 Zeichen enthalten.")
+    if type(limit) is not int or not 1 <= limit <= 100:
+        raise ValueError("limit muss zwischen 1 und 100 liegen.")
+    if type(offset) is not int or offset < 0:
+        raise ValueError("offset muss eine nichtnegative ganze Zahl sein.")
+    query = query.strip()
+    year = today_berlin().year
+    time_min = datetime(year, 1, 1, tzinfo=BERLIN)
+    time_max = datetime(year + 2, 1, 1, tzinfo=BERLIN)
+    calendars = client.list_calendars()
+    if calendar_id:
+        calendars = [c for c in calendars if c["id"] == calendar_id]
+        if not calendars:
+            raise ValueError("Kalender nicht gefunden. Zuerst list_calendars verwenden.")
+    events = []
+    searched = []
+    unsearchable = []
+    for calendar in calendars:
+        if calendar.get("access_role") == "freeBusyReader":
+            unsearchable.append(calendar["id"])
+            continue
+        events.extend(
+            service.event_to_tool_dict(event, calendar["id"])
+            for event in client.search_events(
+                calendar["id"], time_min, time_max, query
+            )
+        )
+        searched.append(calendar["id"])
+
+    def sort_key(event):
+        start = datetime.fromisoformat(event["start"])
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=BERLIN)
+        return start.timestamp(), event["calendar_id"], event["event_id"]
+
+    events.sort(key=sort_key)
+    page = events[offset:offset + limit]
+    has_more = offset + len(page) < len(events)
+    return {
+        "query": query,
+        "time_min": time_min.isoformat(),
+        "time_max": time_max.isoformat(),
+        "timezone": "Europe/Berlin",
+        "searched_calendars": searched,
+        "unsearchable_calendars": unsearchable,
+        "events": page,
+        "total_count": len(events),
+        "has_more": has_more,
+        "next_offset": offset + len(page) if has_more else None,
+    }
 
 
 def find_free_slots(

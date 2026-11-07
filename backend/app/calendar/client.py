@@ -240,10 +240,24 @@ def _request(method: str, path: str, **kwargs) -> httpx.Response:
     return response
 
 
+def _list_all_pages(path: str, params: dict) -> list[dict]:
+    """Alle Ergebnisse laden; auch leere Seiten können Folgeseiten haben."""
+    params = dict(params)
+    items = []
+    while True:
+        data = _request("GET", path, params=params).json()
+        items.extend(data.get("items", []))
+        next_page = data.get("nextPageToken")
+        if not next_page:
+            return items
+        params = {**params, "pageToken": next_page}
+
+
 def list_calendars() -> list[dict]:
     """Alle Kalender des Kontos mit Schreibberechtigungs-Flag."""
-    response = _request("GET", "/users/me/calendarList")
-    items = response.json().get("items", [])
+    items = _list_all_pages(
+        "/users/me/calendarList", {"showHidden": "true", "maxResults": "250"}
+    )
     return [
         {
             "id": item["id"],
@@ -277,6 +291,29 @@ def list_events(
     )
     items = response.json().get("items", [])
     return [e for e in items if e.get("status") != "cancelled"]
+
+
+def search_events(
+    calendar_id: str,
+    time_min: datetime,
+    time_max: datetime,
+    query: str,
+) -> list[dict]:
+    """Google-Freitextsuche mit allen Seiten und einzelnen Serienterminen."""
+    items = _list_all_pages(
+        f"/calendars/{calendar_id}/events",
+        {
+            "timeMin": time_min.isoformat(),
+            "timeMax": time_max.isoformat(),
+            "timeZone": "Europe/Berlin",
+            "q": query,
+            "singleEvents": "true",
+            "showDeleted": "false",
+            "orderBy": "startTime",
+            "maxResults": "2500",
+        },
+    )
+    return [event for event in items if event.get("status") != "cancelled"]
 
 
 def get_event(calendar_id: str, event_id: str) -> dict:
