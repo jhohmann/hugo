@@ -37,9 +37,15 @@ app.add_middleware(AuthenticationMiddleware)
 app.include_router(auth_router)
 
 app.include_router(web_router)
+class CachedStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "public, max-age=86400"
+        return response
+
 app.mount(
     "/static",
-    StaticFiles(directory=WEB_DIR / "static"),
+    CachedStaticFiles(directory=WEB_DIR / "static"),
     name="static",
 )
 

@@ -5,12 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Hugo{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon"
+      type="image/png"
+      href="/static/assets/hugo-icon_sm.png">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
   <header class="site-header">
     <div class="container header-inner">
-      <a class="brand" href="/ui/heute">Hugo</a>
+      <a class="brand" href="/ui/heute">
+        <picture>
+          <source
+            srcset="/static/assets/hugo-logo-dark_sm.png"
+            media="(prefers-color-scheme: dark)"
+          >
+          <img
+              src="/static/assets/hugo-logo-light_sm.png"
+              alt="Hugo"
+              class="brand-logo"
+          >
+        </picture>
+        </a>
       {% if not login_page %}
       <nav class="main-nav" aria-label="Hauptnavigation">
         <a href="/ui/chat"{% if nav_active == "chat" %} class="active" aria-current="page"{% endif %}>Chat</a>
