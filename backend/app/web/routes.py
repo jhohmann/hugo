@@ -41,6 +41,7 @@ WEB_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=WEB_DIR / "templates")
 templates.env.filters["de_date"] = fmt.de_date
 templates.env.filters["de_datetime"] = fmt.de_datetime
+templates.env.filters["source_links"] = fmt.source_links
 
 router = APIRouter(prefix="/ui", include_in_schema=False)
 

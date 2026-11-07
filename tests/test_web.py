@@ -284,6 +284,20 @@ def test_chat_show_unknown_conversation(client, fake_storage):
     assert "nicht gefunden" in response.text
 
 
+def test_sources_are_clickable_in_saved_chat_and_suggestions(client, fake_storage):
+    linked = 'Termin. [Veranstalter](https://example.org/race) <script>bad()</script>'
+    fake_storage["messages"][7][1]["content"] = linked
+    fake_storage["suggestions"][0]["content"] = linked
+    fake_storage["suggestions"][0]["reason"] = linked
+    fake_storage["threads"][0]["description"] = linked
+    for path in ("/ui/chat/7", "/ui/heute", "/ui/threads/5"):
+        result = client.get(path)
+        assert result.status_code == 200
+        assert 'href="https://example.org/race"' in result.text
+        assert '<script>bad()</script>' not in result.text
+        assert '&lt;script&gt;bad()&lt;/script&gt;' in result.text
+
+
 def test_chat_send_redirects_to_conversation(
     client, fake_storage, monkeypatch
 ):

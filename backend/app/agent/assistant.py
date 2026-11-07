@@ -5,6 +5,9 @@ from datetime import date, datetime, time
 
 from openai import OpenAI
 
+from app.agent.web_research import (
+    RESEARCH_INSTRUCTIONS, WEB_SEARCH_TOOL, cited_response_text, web_search_limit,
+)
 from app.calendar import client as calendar_client
 from app.calendar import execution as calendar_execution
 from app.storage.memory_search import (
@@ -1212,7 +1215,7 @@ def run_tool_loop(
     source_message_id: int | None = None,
     run_id: int | None = None,
     max_rounds: int = 8,
-    max_output_tokens: int = 1500,
+    max_output_tokens: int = 4000,
 ) -> str:
     """Zentrale Werkzeugschleife des Agenten.
 
@@ -1220,30 +1223,65 @@ def run_tool_loop(
     zeitgesteuerte Bewertungsläufe (Proaktivität) verwendet.
     """
     conversation = list(messages)
+    allowed_functions = {tool["name"] for tool in tools if tool.get("type") == "function"}
+    remaining_web_calls = web_search_limit()
+    instructions += "\n\n" + RESEARCH_INSTRUCTIONS
 
     # Begrenzung der Werkzeugrunden gegen Endlosschleifen.
     for _ in range(max_rounds):
+        request_options = {}
+        round_tools = list(tools)
+        if remaining_web_calls:
+            round_tools.append(WEB_SEARCH_TOOL)
+            request_options["max_tool_calls"] = remaining_web_calls
+            web_status = "Webrecherche ist verfügbar; nutze sie bei Bedarf."
+        else:
+            web_status = (
+                "Webrecherche ist deaktiviert oder das Recherchebudget ist erschöpft. "
+                "Nutze nur bereits belegte Ergebnisse. Falls aktuelle Belege fehlen, "
+                "nenne diese Einschränkung; behaupte keine durchgeführte Recherche."
+            )
         response = client.responses.create(
             model=MODEL,
-            instructions=instructions,
+            instructions=instructions + "\n" + web_status,
             input=conversation,
-            tools=tools,
+            tools=round_tools,
             reasoning={"effort": "low"},
             max_output_tokens=max_output_tokens,
+            **request_options,
         )
+
+        usage = getattr(response, "usage", None)
+        logger.info(
+            "Hugo model: status=%s input_tokens=%s output_tokens=%s",
+            response.status, getattr(usage, "input_tokens", None),
+            getattr(usage, "output_tokens", None),
+        )
+        web_calls = [item for item in response.output if item.type == "web_search_call"]
+        for call in web_calls:
+            action = getattr(getattr(call, "action", None), "type", "unknown")
+            logger.info("Hugo tool: web_search action=%s status=%s", action, call.status)
+            if call.status != "completed":
+                raise RuntimeError("Webrecherche wurde nicht erfolgreich abgeschlossen.")
+        if len(web_calls) > remaining_web_calls:
+            raise RuntimeError("Webrecherche hat das Aufruflimit überschritten.")
+        remaining_web_calls -= len(web_calls)
 
         if response.status == "incomplete":
             raise RuntimeError(
                 f"Incomplete AI response: "
                 f"{response.incomplete_details}"
             )
+        if response.status != "completed":
+            raise RuntimeError("AI response did not complete")
 
         # Die vollständigen Modell-Ausgaben einschließlich
         # Werkzeugaufrufen für die nächste Runde erhalten.
-        conversation.extend(
+        output = [
             item.model_dump(exclude_none=True)
             for item in response.output
-        )
+        ]
+        conversation.extend(output)
 
         tool_calls = [
             item
@@ -1253,18 +1291,21 @@ def run_tool_loop(
 
         if not tool_calls:
             if not response.output_text:
+                if web_calls:
+                    continue
                 raise RuntimeError("Empty AI response")
 
-            return response.output_text
+            return cited_response_text(output, response.output_text)
 
         for call in tool_calls:
             try:
+                if call.name not in allowed_functions:
+                    raise ValueError("Dieses Werkzeug ist in diesem Lauf nicht verfügbar.")
                 arguments = json.loads(call.arguments)
 
                 logger.info(
-                    "Hugo tool: %s %s",
+                    "Hugo tool: %s",
                     call.name,
-                    arguments,
                 )
 
                 result = execute_tool(

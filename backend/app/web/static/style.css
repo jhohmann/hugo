@@ -1,5 +1,7 @@
 /* Hugo Weboberfläche – ohne externe Abhängigkeiten */
 
+.source-link { text-decoration: underline; text-underline-offset: .15em; overflow-wrap: anywhere; }
+
 .login-card { max-width: 400px; margin: 64px auto; }
 .login-form { display: flex; flex-direction: column; gap: 16px; }
 .login-form input[type="password"] {

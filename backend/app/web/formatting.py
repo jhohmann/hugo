@@ -6,8 +6,30 @@ relative Tageshinweise und Status-/Prioritäts-Labels.
 
 from datetime import date, datetime
 
+from markupsafe import Markup, escape
+
 from app.calendar import service as calendar_service
 from app.tools.dates import BERLIN, WEEKDAYS_DE, parse_date, today_berlin
+from app.tools.links import SOURCE_LINK_PATTERN, source_url
+
+
+def source_links(value: str | None) -> Markup:
+    """Nur Quellenlinks rendern; übriger Text einschließlich HTML bleibt escaped."""
+    text = str(value or "")
+    parts = []
+    cursor = 0
+    for match in SOURCE_LINK_PATTERN.finditer(text):
+        parts.append(escape(text[cursor:match.start()]))
+        url = source_url(match.group(2))
+        if url:
+            parts.append(Markup('<a href="{}" rel="noopener noreferrer" class="source-link">{}</a>').format(
+                url, match.group(1),
+            ))
+        else:
+            parts.append(escape(match.group(0)))
+        cursor = match.end()
+    parts.append(escape(text[cursor:]))
+    return Markup("").join(parts)
 
 THREAD_STATUS_LABELS = {
     "proposed": "Idee",

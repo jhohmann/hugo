@@ -15,7 +15,7 @@
   </header>
 
   {% if thread.description %}
-  <p class="thread-description">{{ thread.description }}</p>
+  <p class="thread-description">{{ thread.description|source_links }}</p>
   {% endif %}
 
   <dl class="fact-list">
@@ -96,10 +96,10 @@
       <span class="date-hint {{ fmt.urgency_class(s.suggested_date) }}">{{ s.suggested_date|de_date }} ({{ fmt.relative_label(s.suggested_date) }})</span>
       {% endif %}
     </header>
-    <p class="suggestion-content">{{ s.content }}</p>
+    <p class="suggestion-content">{{ s.content|source_links }}</p>
     {% if s.deferred_until %}<p class="date-hint">Zurückgestellt bis {{ s.deferred_until|de_date }}</p>{% endif %}
     {% if s.reason %}
-    <p class="suggestion-reason muted">{{ s.reason }}</p>
+    <p class="suggestion-reason muted">{{ s.reason|source_links }}</p>
     {% endif %}
     {% if s.status in ("open", "deferred") %}
     <footer class="actions">

@@ -31,7 +31,7 @@
     <div class="message-list" id="messages" aria-live="polite">
       {% for m in messages %}
       <div class="message {{ m.role }}">
-        <div class="message-bubble">{{ m.content }}</div>
+        <div class="message-bubble">{{ m.content|source_links if m.role == 'assistant' else m.content }}</div>
       </div>
       {% else %}
       <p class="empty-state">Neue Unterhaltung mit Hugo beginnen.</p>

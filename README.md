@@ -300,6 +300,8 @@ Die lokale `compose.yaml` startet nur PostgreSQL und bindet Port 5432 an `127.0.
 | Variable | Standard / Bedeutung |
 |---|---|
 | `OPENAI_API_KEY` | API-Schlüssel; für den normalen App-Start erforderlich |
+| `HUGO_WEB_SEARCH_ENABLED` | `true`; native Webrecherche in Chat und Auswertungen, mit `false` abschalten |
+| `HUGO_WEB_SEARCH_MAX_CALLS` | `3`; höchstens 1–10 native Webaktionen je Agentenlauf |
 | `HUGO_PASSWORD_HASH` | Mit `app.passwords` erzeugter Hash |
 | `HUGO_COOKIE_SECURE` | `true`; für lokales HTTP `false` |
 | `LOG_LEVEL` | `INFO`; Uvicorn hat zusätzlich eigene CLI-Logoptionen |
@@ -607,6 +609,7 @@ Die Pfade beziehen sich auf `backend/app/`.
 | `main.py` | JSON-Endpunkte und Einbindung der Oberfläche |
 | `chat_service.py` | Gemeinsame Chatlogik für API und UI |
 | `agent/assistant.py` | Systemprompt und begrenzte Tool-Calling-Schleife |
+| `agent/web_research.py` | Webrecherche-Konfiguration, Rechercheanweisungen und dauerhafte Quellenlinks |
 | `agent/evaluation.py` | Proaktive Auswertung über dieselbe Schleife |
 | `calendar/` | OAuth, Google-REST-API, Konfliktprüfung und freigegebene Ausführung |
 | `storage/` | Persistenz und semantische Suche |
@@ -619,6 +622,53 @@ Die Pfade beziehen sich auf `backend/app/`.
 | `worker.py` | Geplante Auswertungen |
 
 UI und JSON-API verwenden dieselben Fach- und Speicherfunktionen.
+
+### Internetrecherche
+
+Hugo kann öffentliche aktuelle Informationen über die native
+[`web_search` der OpenAI Responses API](https://developers.openai.com/api/docs/guides/tools-web-search)
+recherchieren. Der bestehende zentrale Agent und API-Schlüssel werden verwendet;
+es gibt keinen zusätzlichen Rechercheagenten, Crawler oder Suchanbieter-Schlüssel.
+Beispiel: „Wann findet die nächste Red Bull Romaniacs statt?“
+
+- Das Modell entscheidet über Suchbegriffe und Folgeaktionen. Die Anweisungen
+  verlangen bei aktuellen Informationen eine Recherche, bevorzugt Primärquellen,
+  und unterscheiden Veranstaltungsjahr, Austragungszeitraum und Anmeldefrist.
+  Fehlende oder widersprüchliche Angaben dürfen nicht als gesicherter Termin gelten.
+- Websuche ist auch in proaktiven Auswertungen verfügbar, aber nur bei einer
+  konkreten offenen Frage eines relevanten Vorhabens vorgesehen. Eine Recherche
+  bedeutet keine Teilnahme oder Buchung. Die Kalenderfreigabe bleibt erforderlich.
+- Die API erhält je Modellrunde das verbleibende `max_tool_calls`-Budget.
+  Zurückgelieferte Webaktionen werden über die Runden hinweg gezählt; nach
+  Verbrauch entfällt das Webwerkzeug. Die bestehende Grenze von acht Modellrunden
+  bleibt bestehen. Chatantworten haben ein Ausgabelimit von 4.000 Tokens inklusive
+  Reasoning, proaktive Auswertungen weiterhin 3.000. Das ist kein Euro-Kostenlimit.
+- Websuche und das zusätzliche Modell-/Suchkontextvolumen verursachen API-Kosten.
+  Abschaltung und Budget sind in `.env` beziehungsweise `.env.prod` konfigurierbar.
+  Für Änderungen Webserver/Worker neu starten beziehungsweise Container neu erstellen.
+- URL-Quellenannotationen werden direkt am belegten Antworttext zu Markdown-Links.
+  Sie bleiben im bestehenden Nachrichten-TEXT und in der JSON-Antwort erhalten;
+  es ist keine Migration erforderlich. Chat, Vorschläge und Vorhabenbeschreibungen
+  stellen Quellenlinks anklickbar dar; sonstiger Text und HTML bleiben escaped.
+  Bei übernommenen Recherchefakten soll das Modell Quelle, Recherchetag und
+  Unsicherheit im bestehenden Inhalt erhalten.
+- Webseiten sind als unvertrauenswürdige Daten gekennzeichnet. Suchanfragen sollen
+  nur benötigte öffentliche Begriffe enthalten, keine privaten Kontextdaten.
+  Diese Auswahl ist modellgesteuert, kein technischer Inhaltsfilter. Wie zuvor
+  erhält der Modellanbieter den für den Agentenlauf relevanten Gesprächskontext.
+- Jeder Lauf kann ausschließlich seine freigegebenen lokalen Funktionswerkzeuge
+  ausführen. Native Webaufrufe werden nicht als lokale Funktionen dispatcht.
+  Webstatus, Aktionstyp und Tokenverbrauch werden protokolliert, ohne Suchtexte,
+  Antwortinhalte oder Werkzeugargumente ins normale Werkzeuglog zu schreiben.
+- Providerfehler, fehlgeschlagene Webaktionen und unvollständige Modellantworten
+  schlagen als Agentenfehler durch. Im Chat bleibt der Entwurf erhalten; eine
+  proaktive Auswertung wird als fehlgeschlagen erfasst. Es gibt keinen stillen
+  Rückfall auf eine angeblich recherchierte Antwort aus Trainingswissen.
+
+Die Suche kann unvollständig oder veraltet sein; Quellen sind prüfbare Belege,
+keine Garantie für richtige Interpretation. Webseiten hinter Anmeldung oder
+Zugriffssperren sind nicht zuverlässig recherchierbar. Wiederholte Recherchen und
+die Relevanz autonomer Hinweise müssen im laufenden Betrieb beobachtet werden.
 
 ### Unterhaltungen und Erinnerungen
 
@@ -916,6 +966,28 @@ Im Projektordner:
 
 Datenbanktests werden ohne erreichbares PostgreSQL übersprungen. Tests nicht gegen eine produktive Datenbank ausführen.
 
+Verifikation der Webrecherche am 07.11.2026:
+
+- `tests/test_web_research.py`, `tests/test_web.py`, `tests/test_thread_tools.py`,
+  `tests/test_calendar_search.py`, `tests/test_evaluation.py` und
+  `tests/test_config.py`: **107 Tests bestanden**. Abgedeckt sind gemischte
+  native Web-/lokale Funktionsaufrufe, Abschaltung, rundenübergreifendes Budget,
+  fehlgeschlagene Antworten, Quellenpersistenz im Antworttext und sichere Links
+  in gerenderten Chat-/Vorschlags-/Vorhabenseiten. Dienste und Speicher waren gemockt.
+- Zwei echte Läufe von `scripts/check_web_research.py` über den zentralen
+  Agenten mit `gpt-5-mini`, ohne lokale Funktionswerkzeuge: jeweils eine erfolgreiche
+  native Websuche. Antwort: nächste Red Bull Romaniacs **27.–31. Juli 2027** mit
+  offizieller Veranstalterquelle. Der zweite Lauf nach Korrektur doppelter Links
+  lieferte genau einen Quellenverweis und meldete 11.132 Input-/313 Output-Tokens.
+  Der Termin wurde zusätzlich gegen die
+  [offiziellen Veranstaltungsregeln](https://www.redbullromaniacs.com/for-competitors/romaniacs-event-regulations)
+  geprüft. Keine gespeicherten Gespräche, Vorhaben oder Kalendertermine verändert.
+- Damit ist öffentliche Recherche über Hugos Modellpfad live belegt. Ein
+  unbeaufsichtigter Worker-Lauf mit hilfreicher Webrecherche, die Verlässlichkeit
+  bei widersprüchlichen Quellen und der künftige Docker-/Proxmox-Betrieb sind
+  dadurch noch nicht nachgewiesen. Nächster Betriebsschritt: Recherchebedarf,
+  Quellenqualität, Wiederholungen und Verbrauch bei realen Auswertungen beobachten.
+
 Verifikation am 07.11.2026: `tests/test_calendar_search.py`,
 `tests/test_thread_tools.py`, `tests/test_evaluation.py` und `tests/test_dates.py`
 liefen mit **62 bestandenen Tests**. Die neue Kalendersuche wurde vom
@@ -964,6 +1036,18 @@ python scripts/check_google_calendar.py
 |---|---|
 | `check_embeddings.py` | Vergleicht Beispielsätze im Speicher; keine Datenbankeinträge |
 | `check_google_calendar.py` | Liest `credentials.json`, schreibt `token.json` und listet Termintitel |
+| `check_web_research.py` | Öffentliche Romaniacs-Frage über Hugos Recherchepfad; keine DB-/Kalenderwerkzeuge, echte API-Kosten |
+
+Begrenzten Webrecherche-Live-Test im Projektordner ausführen:
+
+```powershell
+.venv/Scripts/python.exe scripts/check_web_research.py
+```
+
+`--question` erlaubt eine andere öffentliche Testfrage. Das Skript lädt die
+Projekt-`.env`, verwendet höchstens drei Modellrunden und das konfigurierte
+Webbudget. Es protokolliert native Webaktionen und Tokenverbrauch und gibt die
+Antwort mit Quellen aus. Es verändert keine gespeicherten Gespräche oder Termine.
 
 Der Embedding-Test kann das Modell herunterladen. Das Google-Skript benötigt separat `google-auth-oauthlib` und `google-api-python-client`. Die Anwendung selbst verwendet den OAuth-Weg unter `/ui/kalender`.
 

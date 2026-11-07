@@ -36,9 +36,9 @@
       </span>
       {% endif %}
     </header>
-    <p class="suggestion-content">{{ s.content }}</p>
+    <p class="suggestion-content">{{ s.content|source_links }}</p>
     {% if s.reason %}
-    <p class="suggestion-reason muted">{{ s.reason }}</p>
+    <p class="suggestion-reason muted">{{ s.reason|source_links }}</p>
     {% endif %}
     <footer class="actions">
       <form method="post" action="/ui/suggestions/{{ s.id }}">
@@ -79,7 +79,7 @@
       <span class="date-hint">{{ s.suggested_date|de_date }}</span>
       {% endif %}
     </header>
-    <p class="suggestion-content">{{ s.content }}</p>
+    <p class="suggestion-content">{{ s.content|source_links }}</p>
     <footer class="actions">
       <form method="post" action="/ui/suggestions/{{ s.id }}">
         <input type="hidden" name="action" value="confirmed">

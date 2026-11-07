@@ -1,4 +1,66 @@
-# Next: Git-inspirierte Zeitleiste für Hugos Handlungsstränge
+# Next: Internetrecherche für Hugo
+
+Aktueller Auftrag vom 07.11.2026: Hugo soll selbstständig aktuelle öffentliche
+Informationen recherchieren können, beispielsweise Veranstaltungstermine wie
+die Red Bull Romaniacs. Dieser Plan hat Vorrang vor dem unten erhaltenen
+Zeitleistenplan. Technische Betriebsdokumentation und Prüfergebnisse gehören
+weiterhin in [README.md](README.md).
+
+## Ergebnis und Grenzen
+
+- Der zentrale Agent entscheidet anhand der Frage oder eines relevanten
+  Vorhabens, wann eine Webrecherche nötig ist, und verwendet die native
+  `web_search` der bestehenden OpenAI Responses API.
+- Antworten nennen belastbare Quellen mit anklickbaren Links. Bei Terminen
+  Edition/Jahr, Austragung und Anmeldefrist unterscheiden; bevorzugt offizielle
+  Veranstalterseiten prüfen. Fehlende oder widersprüchliche Angaben bleiben
+  ausdrücklich ungesichert.
+- Eine recherchierte Veranstaltung ist keine Teilnahmezusage. Webseiten sind
+  Daten, keine Anweisungen. Keine automatischen Kalenderänderungen oder
+  Nachrichten; vorhandene Freigabegrenzen bleiben wirksam.
+- Keine zusätzliche Agentenpipeline, kein eigener Crawler und keine
+  veranstaltungsspezifischen Python-Regeln. Der vorhandene API-Schlüssel wird
+  verwendet; Recherche lässt sich abschalten und pro Lauf begrenzen.
+
+## Umsetzung und Prüfung
+
+- [x] Bestehenden Agenten, UI, Dokumentation und offizielle API-Dokumentation
+  prüfen; bisherigen Zeitleistenplan erhalten.
+- [x] Native Websuche im zentralen Tool-Loop für Chat und proaktive Auswertung
+  verfügbar machen; Budget, Fehlerbehandlung und Protokollierung ergänzen.
+- [x] Rechercheanweisungen für aktuelle Quellen, Jahresbezug, Unsicherheit und
+  vertrauliche Daten ergänzen. Recherche nur bei konkretem Bedarf.
+- [x] API-Quellenannotationen als dauerhafte Links in Antworten erhalten und
+  in Chat/Vorschlägen sicher darstellen, ohne unkontrolliertes HTML auszuführen.
+- [x] Automatisierte Tests für gemischte Web-/Funktionsaufrufe, Quellen,
+  Abschaltung, Budget und sichere Linkdarstellung ausführen.
+- [x] Einen begrenzten Live-Test mit öffentlicher Romaniacs-Frage über Hugos
+  eigenen Recherchepfad ausführen; keine privaten Daten oder Schreibwerkzeuge.
+- [x] README und diesen Plan mit Ergebnissen, Grenzen und nächstem Schritt
+  aktualisieren.
+
+**Abnahme:** Eine aktuelle öffentliche Frage kann eine echte Websuche auslösen
+und eine quellenbelegte Antwort liefern. Fehler dürfen nicht als erfolgreiche
+Recherche erscheinen. Automatisierte Tests und Live-Nachweis werden getrennt
+dokumentiert; ein manueller Lauf belegt noch keinen unbeaufsichtigten Betrieb.
+
+**Stand 07.11.2026: Umsetzung abgeschlossen.** 107 automatisierte Tests bestanden;
+zwei Live-Recherchen über Hugos zentralen Agenten bestätigten die öffentliche
+Romaniacs-Frage mit offizieller Quelle. Die im ersten Lauf beobachtete doppelte
+Quellenanzeige ist korrigiert und durch Regressionstest sowie zweiten Live-Lauf
+geprüft. Details, Konfiguration und Grenzen stehen in der
+[README](README.md#internetrecherche), die Nachweise unter
+[Tests und Diagnose](README.md#tests-und-diagnose).
+
+**Nächster Betriebsschritt:** Bei realen geplanten Auswertungen prüfen, ob Hugo
+nur bei konkretem Bedarf recherchiert, passende aktuelle Quellen verwendet und
+unnötige Wiederholungen vermeidet. Das ist Betriebsbeobachtung, kein bereits
+erbrachter Nachweis autonomer Proaktivität. Der Zeitleistenplan unten bleibt als
+separates, noch nicht abgeschlossenes Vorhaben erhalten.
+
+---
+
+# Zurückgestellter Plan: Git-inspirierte Zeitleiste für Hugos Handlungsstränge
 
 ## Ziel
 
