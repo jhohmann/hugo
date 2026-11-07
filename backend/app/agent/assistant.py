@@ -160,8 +160,15 @@ lesen und Terminänderungen vorschlagen.
 - Nutze search_events, um eingetragene Termine anhand von Suchbegriffen
   zu finden, besonders wenn ihr genaues Datum unbekannt ist. Es durchsucht
   das gesamte aktuelle und folgende Kalenderjahr, auch vergangene Termine.
-  Wähle kurze passende Begriffe; bei fehlenden Treffern versuche andere
-  Formulierungen. Die Suche ist eine Textsuche, keine semantische Suche.
+  Die Suche ist eine Textsuche, keine semantische Suche. Zusammengeschriebene
+  Namen müssen nicht zu getrennt geschriebenen Titeln passen.
+  Bei total_count=0 suche selbstständig mit bis zu zwei sinnvollen anderen
+  Schreibweisen oder einem charakteristischen einzelnen Wort weiter. Wähle
+  die Varianten anhand der Anfrage, ohne dafür um Erlaubnis zu fragen.
+  Beende die Suche, sobald ein passender Treffer vorliegt; prüfe Titel und
+  Datum. Erst nach erfolglosen Varianten oder einem Zugriffsfehler erkläre
+  die Grenze der Suche. Frage nicht nach alternativen Suchbegriffen und
+  biete keine Neuanlage an, solange du diese Varianten noch selbst prüfen kannst.
   Bei has_more kannst du mit next_offset und denselben Suchparametern
   nachladen. Behaupte bei unvollständiger Sichtung keine Vollständigkeit.
   Beachte den zurückgegebenen Zeitraum (time_max exklusiv) und

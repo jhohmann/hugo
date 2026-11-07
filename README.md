@@ -842,11 +842,16 @@ ebenfalls enthalten sein.
   [Google-Freitextsuche](https://developers.google.com/workspace/calendar/api/v3/reference/events/list)
   durchsucht unter anderem Titel, Beschreibung, Ort und Teilnehmer. Sie ist
   keine semantische Suche; Hugo wählt Begriffe und mögliche Alternativen.
+  Bei einer leeren Suche soll Hugo bis zu zwei sinnvolle Schreibvarianten oder
+  charakteristische Einzelwörter selbstständig prüfen, bevor er nachfragt.
 - `calendar_id=null` durchsucht alle Kalender der verbundenen Kalenderliste,
   einschließlich ausgeblendeter Kalender. Eine ID beschränkt die Suche.
   Kalender mit ausschließlich Frei-/Belegt-Rechten werden unter
   `unsearchable_calendars` ausgewiesen. Private Inhalte bleiben von den
   Google-Leserechten abhängig.
+- Kalender- und Termin-IDs werden als einzelne URL-Pfadsegmente kodiert.
+  Das ist insbesondere bei `#` in Feiertags- und Kalenderwochenkalendern nötig;
+  andernfalls kann ein solcher Kalender die gesamte Suche mit HTTP 404 abbrechen.
 - Alle Google-Ergebnisseiten werden nachgeladen. Serien werden in einzelne
   Vorkommen aufgelöst; abgesagte Termine werden ausgeschlossen. Die Treffer
   werden kalenderübergreifend chronologisch sortiert.
@@ -995,9 +1000,33 @@ Agentenwerkzeug bis zu simulierten Google-Antworten geprüft, einschließlich
 mehrerer Kalender und Ergebnisseiten, mehr als 100 Treffern, Berliner
 Jahreswechsel, ganztägiger Termine, fehlender Leserechte und API-Fehler.
 Google-Serienauflösung und Textsuche werden über die API-Parameter angefordert;
-deren tatsächliches Verhalten und die selbstständige Werkzeugwahl des Modells
-sind noch nicht live verifiziert. Nächster Praxistest: einen bekannten Termin
-im laufenden und einen im folgenden Jahr über den Chat finden lassen.
+zum Zeitpunkt dieses Tests waren ihr tatsächliches Verhalten und die
+selbstständige Werkzeugwahl des Modells noch nicht live verifiziert.
+
+Ergänzende Kalenderdiagnose am 07.11.2026:
+
+- Live reproduziert: Unkodierte `#`-Zeichen in Kalender-IDs verursachten HTTP 404
+  bei Feiertagen und Kalenderwochen und brachen die kalenderübergreifende Suche ab.
+  Mit kodierten IDs waren dieselben Kalender lesbar. Alle Kalender-/Terminpfade
+  kodieren ihre IDs jetzt, einschließlich Einzelabruf und freigegebener Änderungen.
+- Die echte Google-Textsuche fand einen bekannten Termin im Folgejahr mit einem
+  Teilbegriff; die zusammengeschriebene Anfrage fand den getrennt geschriebenen
+  Titel nicht. Die Suche bleibt eine Textsuche; das Modell muss Varianten wählen.
+- Der direkte korrigierte Werkzeugpfad fand den Termin bei einer vollständigen
+  Suche über zehn aktuell gelistete Kalender. Ein erster Modelllauf mit dem
+  bisherigen Prompt hörte dagegen nach einem leeren Ergebnis auf. Der Prompt
+  fordert deshalb jetzt ausdrücklich eigenständige Suchvarianten vor Rückfragen;
+  Modell und Reasoning-Einstellung bleiben unverändert. Grundlage für klare
+  Such- und Abbruchbedingungen: [OpenAI Docs: GPT-5 prompting guide](https://developers.openai.com/cookbook/examples/gpt-5/gpt-5_prompting_guide#controlling-agentic-eagerness).
+- Der anschließende Live-Modelllauf mit derselben Frage suchte eigenständig
+  auch nach der getrennten Schreibweise und nannte den richtigen Kalendertermin
+  mit Beginn und Ende. Verwendet wurden der reguläre Systemprompt und Tool-Loop,
+  ausschließlich `search_events`/`list_calendars`, ohne Websuche oder gespeicherte
+  Gesprächshistorie. Das belegt diesen konkreten Fall, keine allgemeine Trefferquote
+  oder bereits erfolgte Übernahme auf Proxmox.
+- `tests/test_calendar_client.py` und `tests/test_calendar_search.py`: **23 Tests
+  bestanden**, einschließlich HTTP-URL-Prüfung mit `#`, `/`, `?` und `%` in IDs.
+  Schreiboperationen wurden nur simuliert; keine externen Termine verändert.
 
 Gezielt Start, Migration und Anmeldung prüfen:
 

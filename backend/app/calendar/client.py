@@ -10,6 +10,7 @@ import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 import httpx
 
@@ -280,7 +281,7 @@ def list_events(
     nach Start sortiert. Abgesagte Termine werden übersprungen."""
     response = _request(
         "GET",
-        f"/calendars/{calendar_id}/events",
+        f"/calendars/{quote(calendar_id, safe='')}/events",
         params={
             "timeMin": time_min.isoformat(),
             "timeMax": time_max.isoformat(),
@@ -301,7 +302,7 @@ def search_events(
 ) -> list[dict]:
     """Google-Freitextsuche mit allen Seiten und einzelnen Serienterminen."""
     items = _list_all_pages(
-        f"/calendars/{calendar_id}/events",
+        f"/calendars/{quote(calendar_id, safe='')}/events",
         {
             "timeMin": time_min.isoformat(),
             "timeMax": time_max.isoformat(),
@@ -319,7 +320,7 @@ def search_events(
 def get_event(calendar_id: str, event_id: str) -> dict:
     """Ein einzelnes Ereignis (inkl. etag/updated)."""
     return _request(
-        "GET", f"/calendars/{calendar_id}/events/{event_id}"
+        "GET", f"/calendars/{quote(calendar_id, safe='')}/events/{quote(event_id, safe='')}"
     ).json()
 
 
@@ -327,7 +328,7 @@ def insert_event(calendar_id: str, body: dict) -> dict:
     """Termin anlegen. body kann eine eigene Event-ID
     enthalten (Idempotenz bei Wiederholungen)."""
     return _request(
-        "POST", f"/calendars/{calendar_id}/events", json=body
+        "POST", f"/calendars/{quote(calendar_id, safe='')}/events", json=body
     ).json()
 
 
@@ -335,7 +336,7 @@ def patch_event(calendar_id: str, event_id: str, body: dict) -> dict:
     """Termin ändern (nur übergebene Felder)."""
     return _request(
         "PATCH",
-        f"/calendars/{calendar_id}/events/{event_id}",
+        f"/calendars/{quote(calendar_id, safe='')}/events/{quote(event_id, safe='')}",
         json=body,
     ).json()
 
@@ -345,7 +346,7 @@ def delete_event(calendar_id: str, event_id: str) -> None:
     erfolgreich gelöscht (idempotent)."""
     try:
         _request(
-            "DELETE", f"/calendars/{calendar_id}/events/{event_id}"
+            "DELETE", f"/calendars/{quote(calendar_id, safe='')}/events/{quote(event_id, safe='')}"
         )
     except EventNotFoundError:
         logger.info(
