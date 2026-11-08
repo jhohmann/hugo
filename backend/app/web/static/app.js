@@ -9,7 +9,7 @@ document.addEventListener("DOMContentLoaded", function () {
       var button = form.querySelector("button[type=submit]");
       if (button) {
         button.disabled = true;
-        button.textContent = form.dataset.loadingText;
+        if (!form.classList.contains("chat-form")) button.textContent = form.dataset.loadingText;
       }
       var indicator = document.querySelector(".loading-indicator");
       if (indicator) indicator.hidden = false;
@@ -31,44 +31,41 @@ document.addEventListener("DOMContentLoaded", function () {
     panel.removeAttribute("open");
   }
 
-  // Das Eingabefeld gehört zum Scrollziel, damit es die Antwort nicht verdeckt.
-  var chatMain = document.querySelector(".chat-main");
-  if (chatMain) {
+  // Nur der Verlauf scrollt; das Eingabefeld bleibt außerhalb davon.
+  var messages = document.getElementById("messages");
+  if (messages) {
     var followChat = true;
-    var previousScrollY = window.scrollY;
 
     function scrollChatToEnd() {
-      if (!followChat) return;
-      chatMain.scrollIntoView({ block: "end", behavior: "instant" });
-      previousScrollY = window.scrollY;
+      if (followChat) messages.scrollTop = messages.scrollHeight;
     }
 
-    window.addEventListener("scroll", function () {
-      if (window.scrollY < previousScrollY) {
-        followChat = false;
-      } else if (chatMain.getBoundingClientRect().bottom <= window.innerHeight + 48) {
-        followChat = true;
-      }
-      previousScrollY = window.scrollY;
+    messages.addEventListener("scroll", function () {
+      followChat = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 48;
     }, { passive: true });
 
-    // Auch nachgeladenes Layout und wachsende Nachrichten berücksichtigen.
-    if ("ResizeObserver" in window) {
-      var chatResizeObserver = new ResizeObserver(scrollChatToEnd);
-      chatResizeObserver.observe(chatMain);
-      var header = document.querySelector(".site-header");
-      if (header) chatResizeObserver.observe(header);
-      if (panel) chatResizeObserver.observe(panel);
-    }
-    window.addEventListener("load", scrollChatToEnd);
-    window.addEventListener("resize", scrollChatToEnd);
-    var chatForm = chatMain.querySelector(".chat-form");
-    if (chatForm) {
-      chatForm.addEventListener("submit", function () {
-        followChat = true;
+    // Mobile Tastaturen verkleinern nicht in jedem Browser das CSS-Viewport.
+    var viewport = window.visualViewport;
+    var viewportFrame;
+    function fitChatToViewport() {
+      cancelAnimationFrame(viewportFrame);
+      viewportFrame = requestAnimationFrame(function () {
+        if (viewport && viewport.scale !== 1) return; // Pinch-Zoom nicht überschreiben.
+        document.body.style.setProperty("--chat-height", (viewport ? viewport.height : window.innerHeight) + "px");
+        document.body.style.setProperty("--chat-top", (viewport ? viewport.offsetTop : 0) + "px");
         scrollChatToEnd();
       });
     }
+    if (viewport) {
+      viewport.addEventListener("resize", fitChatToViewport);
+      viewport.addEventListener("scroll", fitChatToViewport);
+    }
+    window.addEventListener("resize", fitChatToViewport);
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(scrollChatToEnd).observe(messages);
+    }
+    window.addEventListener("load", scrollChatToEnd);
+    fitChatToViewport();
     scrollChatToEnd();
   }
 
@@ -76,9 +73,9 @@ document.addEventListener("DOMContentLoaded", function () {
   var chatInput = document.getElementById("chat-message");
   if (chatInput) {
     chatInput.addEventListener("keydown", function (event) {
-      if (event.key === "Enter" && !event.shiftKey) {
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
-        chatInput.form.requestSubmit();
+        if (!chatInput.form.querySelector("button[type=submit]").disabled) chatInput.form.requestSubmit();
       }
     });
   }

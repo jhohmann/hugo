@@ -180,10 +180,13 @@ Die Oberfläche unter `/ui` führt nach der Anmeldung zur Ansicht **Heute**. Inh
 - Die 50 jüngsten Unterhaltungen anhand ihrer ersten Nutzernachricht auswählen.
 - Entwurf bei einem Agentenfehler erhalten.
 - Mit **Enter** senden, mit **Shift+Enter** einen Zeilenumbruch einfügen.
-- Mit JavaScript bleiben das Chatende und das Eingabefeld beim Laden und bei
-  Größenänderungen sichtbar. Hochscrollen pausiert das Nachführen; am Ende des
-  Chats oder beim Senden wird es wieder aktiviert. Antworten erscheinen derzeit
-  vollständig nach dem Neuladen, nicht als Textstream.
+- Der Nachrichtenverlauf scrollt innerhalb der verfügbaren Bildschirmhöhe;
+  das Eingabefeld steht darunter und überlagert keine Nachrichten. Mit JavaScript
+  passt sich die Chatfläche über `visualViewport` auch an die mobile Tastatur an
+  ([Browser-Verhalten](https://developer.mozilla.org/en-US/docs/Web/API/VisualViewport)).
+  Beim Öffnen erscheint das Chatende; wer hochscrollt, behält seine Leseposition
+  auch bei Größenänderungen. Kein automatischer Eingabefokus beim Seitenwechsel.
+  Antworten erscheinen vollständig nach dem Neuladen, nicht als Textstream.
 
 ### Heute
 
@@ -228,6 +231,8 @@ Die Oberfläche verwendet serverseitige Jinja2-Templates und lokale CSS-/JavaScr
 
 - Einspaltige Darstellung bis 760 px; Chat-Sidebar auf größeren Bildschirmen.
 - Hell-/Dunkelmodus entsprechend der Systemeinstellung.
+- Buttons, Menüpunkte und Formularfelder verwenden wieder den gemeinsamen
+  Eckenradius von 10 Pixeln.
 - Semantische Elemente, ARIA-Beschriftungen und Statusmeldungen für Tastatur und Screenreader.
 - Hervorhebung hoher Prioritäten ab P4 und überfälliger Daten.
 - Formulare funktionieren ohne JavaScript; Ladeanzeigen, Bestätigungsdialoge und Enter-zum-Senden benötigen JavaScript.
@@ -949,6 +954,15 @@ Die Oberfläche leitet bei fehlender Sitzung zur Anmeldung weiter.
 Die meisten JSON-Listen begrenzen `limit` auf 1–500. Für vollständige Datensicherungen `pg_dump` verwenden.
 
 ## Tests und Diagnose
+
+Chat-Layout am 08.11.2026: zwei gezielte Edge-Browserprüfungen bestanden
+(`tests/test_chat_browser.py`, opt-in mit `HUGO_BROWSER_TESTS=1`; Playwright und
+lokales Edge erforderlich). Geprüft wurden lange Verläufe, Leseposition beim
+Verkleinern, Chatende, Radien sowie ein separat verkleinertes/verschobenes
+`visualViewport` als Tastatursimulation. Die Prüfung rendert die echten Vorlagen
+mit Beispieldaten ohne Backend-, Datenbank- oder Modellzugriff. Screenshots liegen
+lokal unter `logs/chat-*.png`. Eine echte Bildschirmtastatur unter iOS/Android ist
+damit noch nicht verifiziert; nächster Praxisschritt ist eine Probe am Handy.
 
 ### Automatisierte Tests
 

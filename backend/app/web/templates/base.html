@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
   <title>{% block title %}Hugo{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="icon"
@@ -10,7 +10,7 @@
       href="/static/assets/hugo-icon_sm.png">
   <script src="/static/app.js" defer></script>
 </head>
-<body>
+<body{% if nav_active == "chat" %} class="chat-page"{% endif %}>
   <header class="site-header">
     <div class="container header-inner">
       <a class="brand" href="/ui/heute">

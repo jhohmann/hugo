@@ -28,7 +28,7 @@
     <p class="alert" role="alert">{{ error }}</p>
     {% endif %}
 
-    <div class="message-list" id="messages" aria-live="polite">
+    <div class="message-list" id="messages" tabindex="0" role="region" aria-label="Nachrichtenverlauf" aria-live="polite">
       {% for m in messages %}
       <div class="message {{ m.role }}">
         <div class="message-bubble">{{ m.content|source_links if m.role == 'assistant' else m.content }}</div>
@@ -44,7 +44,7 @@
       {% endif %}
       <label class="visually-hidden" for="chat-message">Nachricht an Hugo</label>
       <textarea id="chat-message" name="message" rows="2" required
-        placeholder="Nachricht an Hugo …" autofocus>{{ draft }}</textarea>
+        placeholder="Nachricht an Hugo …">{{ draft }}</textarea>
       <button type="submit" class="button button-primary">Senden</button>
     </form>
     <p class="loading-indicator" hidden>Hugo denkt nach …</p>
