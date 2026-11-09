@@ -1,6 +1,7 @@
 """Gemeinsame Chat-Logik für API-Endpunkt und Weboberfläche."""
 
 from app.agent.assistant import ask_hugo
+from app.agent.chat_context import prepare_context
 from app.storage.database import (
     create_conversation,
     get_messages,
@@ -25,7 +26,7 @@ def run_chat(message: str, conversation_id: int | None) -> dict:
         )
 
     message_id = save_message(conversation_id, "user", message)
-    messages = get_messages(conversation_id)
+    messages = prepare_context(conversation_id, message_id)
     answer = ask_hugo(messages, message_id)
     save_message(conversation_id, "assistant", answer)
 

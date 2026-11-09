@@ -314,6 +314,7 @@ Die lokale `compose.yaml` startet nur PostgreSQL und bindet Port 5432 an `127.0.
 | `OPENAI_API_KEY` | API-Schlüssel; für den normalen App-Start erforderlich |
 | `HUGO_WEB_SEARCH_ENABLED` | `true`; native Webrecherche in Chat und Auswertungen, mit `false` abschalten |
 | `HUGO_WEB_SEARCH_MAX_CALLS` | `3`; höchstens 1–10 native Webaktionen je Agentenlauf |
+| `HUGO_CHAT_HISTORY_TOKENS` | `12000`; weiches Budget für den Gesprächsverlauf in geschätzten Tokens, zulässig 2000–60000 |
 | `HUGO_PASSWORD_HASH` | Mit `app.passwords` erzeugter Hash |
 | `HUGO_COOKIE_SECURE` | `true`; für lokales HTTP `false` |
 | `LOG_LEVEL` | `INFO`; Uvicorn hat zusätzlich eigene CLI-Logoptionen |
@@ -621,6 +622,8 @@ Die Pfade beziehen sich auf `backend/app/`.
 | `main.py` | JSON-Endpunkte und Einbindung der Oberfläche |
 | `chat_service.py` | Gemeinsame Chatlogik für API und UI |
 | `agent/assistant.py` | Systemprompt und begrenzte Tool-Calling-Schleife |
+| `agent/chat_context.py` | Budgetabhängige Verdichtung älterer Gesprächsteile und vollständiger jüngster Verlauf |
+| `storage/conversation_context.py` | Gespeicherte Zusammenfassungen mit Nachrichtenmarke und Schutz vor konkurrierenden Updates |
 | `agent/web_research.py` | Webrecherche-Konfiguration, Rechercheanweisungen und dauerhafte Quellenlinks |
 | `agent/evaluation.py` | Proaktive Auswertung über dieselbe Schleife |
 | `calendar/` | OAuth, Google-REST-API, Konfliktprüfung und freigegebene Ausführung |
@@ -696,9 +699,50 @@ die Relevanz autonomer Hinweise müssen im laufenden Betrieb beobachtet werden.
 |---|---|
 | `conversations` | Unterhaltungen |
 | `messages` | Nachrichten und Rollen |
+| `conversation_summaries` | Ersetzbare Gesprächszusammenfassung, letzte enthaltene Nachrichten-ID und Änderungszeit |
 | `memories` | Inhalt, Kategorie, Gültigkeit, Quelle, Zeitstempel und Embedding |
 
 Erinnerungen haben den Status `proposed`, `confirmed` oder `outdated`. Exakte Duplikate werden unterdrückt. `update_memory` verändert nur Erinnerungen mit Status `proposed`.
+
+Kurze Chats senden ihren gesamten Verlauf. Oberhalb von `HUGO_CHAT_HISTORY_TOKENS`
+verdichtet ein separater, werkzeugloser Aufruf desselben Modells ältere Nachrichten.
+Die Zusammenfassung wird pro Unterhaltung gespeichert und später zusammen mit
+den noch nicht verdichteten Nachrichten wiederverwendet. Bei erneutem Überschreiten
+werden nur bisher unverdichtete Nachrichten zusammen mit dem bestehenden
+Zwischenstand verarbeitet. Das ist eine Kontextaufbereitung, kein weiterer
+Agent mit eigenen Aktionen. Die manuelle Verwaltung des Gesprächskontexts folgt
+dem [Responses-API-Prinzip](https://developers.openai.com/api/docs/guides/conversation-state).
+
+Mindestens die letzten sechs Nachrichten sowie ungefähr ein Drittel des Budgets
+bleiben vollständig erhalten; die Grenze wird zum Beginn einer Nutzernachricht
+zurückgeschoben. Ziele, Korrekturen, Entscheidungen, Unsicherheiten und offene
+Abhängigkeiten sollen erhalten bleiben. Quellnachrichten enthalten für die
+Verdichtung ihren Erfassungszeitpunkt, damit ältere relative Datumsangaben nicht
+auf heute verschoben werden. Die Zusammenfassung wird als historischer Kontext
+mit Nutzerrolle eingefügt, niemals als Systemanweisung. Aktuelle Nutzeraussagen
+und über Werkzeuge geprüfte Planungsdaten bleiben maßgeblich.
+
+Das Budget betrifft nur die Historie, nicht Systemprompt, Werkzeuge oder neu
+abgerufene Ergebnisse. Die Schätzung verwendet UTF-8-Bytes/3 plus acht Tokens je
+Nachricht, keinen modellspezifischen Tokenizer. Sie ist keine harte Kontextgrenze.
+Pro Anfrage erfolgen höchstens vier Zusammenfassungsaufrufe mit begrenzten
+Nachrichtenpaketen, jeweils maximal 4000 Ausgabetokens und 60 Sekunden ohne
+automatische Wiederholung. Ein einzelner sehr großer Beitrag wird nicht zerteilt.
+Zusammenfassungen sind auf höchstens 6000 Zeichen begrenzt, bei kleinem Budget
+entsprechend weniger. Leere, unvollständige, zu lange oder nicht verkleinernde
+Ergebnisse werden verworfen. Bei Modell-/Speicherfehlern oder konkurrierenden
+Updates bleibt der vorherige Zwischenstand mit allen restlichen Nachrichten erhalten.
+Dadurch kann das weiche Budget überschritten werden; sehr große Chats können
+weiterhin die Modellgrenze erreichen. Fehlerarten und Tokenverbrauch werden ohne
+Gesprächsinhalte protokolliert.
+
+Migration `006_conversation_summaries.sql` ergänzt ausschließlich abgeleiteten
+Kontext. Originalnachrichten, vollständige Anzeige und Nachrichten-API bleiben
+erhalten. Zusammenfassungen sind auf die jeweilige Unterhaltung begrenzt und
+ersetzen keine langfristigen Erinnerungen oder Vorhaben. Parallele Anfragen
+können zusätzliche Zusammenfassungsaufrufe verursachen; ein veralteter
+Zwischenstand kann einen neueren nicht überschreiben. Der gesamte Chatablauf
+ist dadurch noch nicht gegen gleichzeitige Nutzernachrichten serialisiert.
 
 ### Vorhaben
 
@@ -1038,6 +1082,31 @@ Im Projektordner:
 
 Datenbanktests werden ohne erreichbares PostgreSQL übersprungen. Tests nicht gegen eine produktive Datenbank ausführen.
 
+Verifikation der Gesprächsverdichtung am 09.11.2026:
+
+- `tests/test_chat_context.py`, `tests/test_conversation_context.py`,
+  `tests/test_migrations.py`, `tests/test_web.py` und `tests/test_config.py`:
+  **63 Tests bestanden**, einschließlich Nachprüfung der auf sechs erhöhten
+  Migrationsanzahl. Keine übersprungenen Tests. Abgedeckt sind Budgetauslösung,
+  vollständiger jüngster Verlauf, Wiederverwendung und Fortschreibung,
+  Fehlerfälle ohne Abschneiden, Trennung der Unterhaltungen, konkurrierende
+  Zwischenstände und Migrationserhalt in temporären PostgreSQL-Datenbanken.
+- Migration `006_conversation_summaries.sql` wurde lokal erfolgreich angewendet.
+  Der erste erreichbare API-Test erzeugte eine zu lange Zusammenfassung; diese
+  wurde verworfen und der ursprüngliche Kontext vollständig beibehalten. Die
+  Längenvorgabe wurde anschließend um eine kürzere Ziellänge ergänzt.
+- Der anschließende Live-Test mit synthetischen Daten über `gpt-5-mini` bestand
+  Verdichtung, Wiederverwendung ohne erneuten API-Aufruf und Faktenabruf:
+  korrigierter Zieltermin, unverbindlicher Status, ausstehende Rückmeldung,
+  geänderter Kontakt, ursprünglicher Bezug von „morgen“ und keine erfundene
+  Kalenderaktion. Geschätzte Historie: **3150 → 1721 Tokens**. Tatsächliche
+  API-Nutzung: Zusammenfassung 1802 Input-/650 Output-Tokens, anschließende
+  Antwort einschließlich Systemprompt 5132 Input-/232 Output-Tokens.
+  Es wurden keine echten Gesprächs- oder Kalenderdaten verwendet. Das belegt
+  diesen begrenzten Fall, keine allgemeine Qualität über viele Verdichtungen.
+  Nächster Schritt: lange reale Unterhaltungen auf verlorene Zusammenhänge,
+  Korrekturen und Kosten beobachten. Docker-/Proxmox-Betrieb blieb ungeprüft.
+
 Verifikation der eigenständigen Zeitbewertung am 09.11.2026:
 
 - `tests/test_evaluation.py`, `tests/test_thread_tools.py`, `tests/test_follow_up.py`,
@@ -1146,6 +1215,7 @@ python scripts/check_google_calendar.py
 | `check_embeddings.py` | Vergleicht Beispielsätze im Speicher; keine Datenbankeinträge |
 | `check_google_calendar.py` | Liest `credentials.json`, schreibt `token.json` und listet Termintitel |
 | `check_web_research.py` | Öffentliche Romaniacs-Frage über Hugos Recherchepfad; keine DB-/Kalenderwerkzeuge, echte API-Kosten |
+| `check_chat_context.py` | Verdichtung und Faktenabruf mit erfundenem Verlauf, Korrekturen und relativen Daten; prüft Cache-Wiederverwendung, keine DB-/Kalenderzugriffe, echte API-Kosten |
 | `check_chat_focus.py` | Zwei Modellproben für kurze Zeitplanung und Terminkonflikte mit erfundenen Werkzeugdaten; keine DB-/Kalenderzugriffe, echte API-Kosten |
 
 Begrenzten Webrecherche-Live-Test im Projektordner ausführen:
