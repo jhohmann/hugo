@@ -170,13 +170,18 @@ def test_worker_evaluation_reopens_due_without_model_duplicates(store, monkeypat
     payloads = []
     def model_loop(instructions, messages, tools, **kwargs):
         payloads.append(messages[0]["content"])
+        # Seeing a paused plan as context must not bypass its notification pause.
+        result = assistant.execute_tool("create_suggestion", {
+            "thread_id": future, "content": "Vorzeitig nachfassen",
+        }, run_id=kwargs["run_id"])
+        assert not result["created"]
         return "Keine weiteren Hinweise."
     monkeypatch.setattr(evaluation, "run_tool_loop", model_loop)
     before = evaluation.run_evaluation(trigger="scheduled")
-    assert before["threads_considered"] == 0
+    assert before["threads_considered"] == 2
     advance(monkeypatch, 8)
     after = evaluation.run_evaluation(trigger="scheduled")
-    assert after["threads_considered"] == 1
+    assert after["threads_considered"] == 2
     assert after["suggestions_created"] == 0
     assert '"status": "open"' in payloads[-1]
     assert suggestions.list_suggestions(status="open")[0]["id"] == sid

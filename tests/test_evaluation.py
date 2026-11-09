@@ -4,6 +4,8 @@ Laufen ohne Datenbank und ohne OpenAI-Zugriff:
 Storage-Funktionen und die Werkzeugschleife werden ersetzt.
 """
 
+import json
+
 import pytest
 
 from app.agent import evaluation
@@ -19,6 +21,7 @@ def test_werkzeugliste_der_bewertung():
     assert "get_thread" in names
     assert "list_thread_events" in names
     assert "search_memories" in names
+    assert "compute_date" in names
 
     # … aber keine Schreibzugriffe auf Threads/Erinnerungen.
     assert "create_thread" not in names
@@ -119,6 +122,30 @@ def test_bestand_und_run_id_werden_uebergeben(
     assert "Pass gültig" in captured["content"]
     assert "Alt" in captured["content"]
     assert "Verworfen" not in captured["content"]
+
+
+def test_scheduled_evaluation_keeps_paused_plans_as_context(fake_storage, monkeypatch):
+    plans = [
+        {"id": 1, "title": "Offenes Ziel", "act_by": None},
+        {"id": 2, "title": "Später prüfen", "review_on": "2099-01-01"},
+    ]
+
+    def read_threads(**kwargs):
+        assert kwargs.get("open_only") is True
+        assert not kwargs.get("review_due_only", False)
+        assert kwargs.get("tag") is None
+        return plans
+
+    def model_loop(instructions, messages, tools, **kwargs):
+        payload = json.loads(messages[0]["content"].split("\n", 1)[1])
+        assert payload["offene_threads"] == plans
+        return "Kein neuer Anlass."
+
+    monkeypatch.setattr(evaluation, "list_threads", read_threads)
+    monkeypatch.setattr(evaluation, "run_tool_loop", model_loop)
+    result = evaluation.run_evaluation(trigger="scheduled")
+    assert result["threads_considered"] == 2
+    assert fake_storage["create_run"] == ["scheduled"]
 
 
 def test_fehler_markiert_lauf_als_failed(

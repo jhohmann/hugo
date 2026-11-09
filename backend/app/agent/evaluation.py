@@ -9,7 +9,7 @@ entscheidet, was Aufmerksamkeit verdient.
 import json
 import logging
 
-from app.agent.assistant import TOOLS, run_tool_loop
+from app.agent.assistant import PLANNING_INSTRUCTIONS, TOOLS, run_tool_loop
 from app.storage.memory_search import list_memories
 from app.storage.suggestions import (
     count_suggestions_for_run,
@@ -47,10 +47,10 @@ BEWERTE INSBESONDERE
 - harte Deadlines
 - Ereignisse und ungefähre Zeiträume (event_start/event_end,
   time_precision)
-- Vorbereitungsfenster: Wenn ein Thread preparation_weeks
-  hat, prüfe ob event_start oder act_by innerhalb dieses
-  Fensters liegt. Beispiel: preparation_weeks=12 und
-  event_start in 10 Wochen → Zeit zu starten.
+- Vorbereitungsfenster: Beziehe preparation_weeks, soweit vorhanden,
+  in die Rückwärtsplanung vom Zieltermin ein. act_by bezeichnet bereits
+  den empfohlenen Handlungsbeginn; ziehe davon nicht nochmals pauschal die
+  Vorbereitungszeit ab. Prüfe die Grundlage anhand der Beschreibung.
 - Blocker: Threads mit blocked_reason warten auf etwas.
   Prüfe ob der Grund noch aktuell ist und ob nachgefasst
   werden sollte.
@@ -60,7 +60,8 @@ BEWERTE INSBESONDERE
   (erkennbar aus Beschreibung und Kontext)
 - sofern ein Kalender verbunden ist: Terminkonflikte mit
   Vorhaben (list_events, find_free_slots; bei
-  "not_connected" den Kalender einfach ignorieren)
+  "not_connected" mit den verfügbaren Angaben weiterbewerten und die
+  Kalenderverfügbarkeit als ungeprüft behandeln)
 - search_events findet Termine anhand kurzer Suchbegriffe im gesamten
   aktuellen und folgenden Kalenderjahr. Bei Bedarf mit next_offset und
   denselben Filtern nachladen. Beachte has_more, den Suchzeitraum und
@@ -77,15 +78,9 @@ VORSCHLÄGE
 - Erzeuge mit create_suggestion nur konkrete, nützliche
   Vorschläge mit Begründung, Priorität und — wenn sinnvoll —
   einem empfohlenen Handlungszeitpunkt.
-- Schlecht: "Japanreise am 15. März". Gut: "Die Japanreise
-  beginnt in etwa vier Monaten; Flugbuchung und Prüfung der
-  Einreisevoraussetzungen sollten jetzt angegangen werden."
-- Bei Vorbereitungsfenstern: "Die Japanreise beginnt in
-  10 Wochen, preparation_weeks=12. Es ist Zeit zu starten.
-  Das Visum ist noch nicht beantragt — das ist der erste
-  Schritt."
-- Bei Blockern: "Thread X wartet seit 2 Wochen auf Y.
-  Nachfassen?"
+- Bestimme Zeitpunkt und Priorität eines Hinweises aus der aktuellen
+  Kritikalität; kopiere nicht einfach die Priorität oder act_by des Vorhabens.
+  Beschreibe die konkrete Folge weiteren Wartens anhand des belegten Kontexts.
 - Erzeuge keine Vorschläge, wenn nichts relevant ist.
 - Wiederhole keine bestehenden offenen oder zurückgestellten
   Vorschläge (siehe Eingabe).
@@ -119,6 +114,7 @@ _READ_TOOL_NAMES = {
     "list_events",
     "search_events",
     "find_free_slots",
+    "compute_date",
 }
 
 _SUGGESTION_TOOL = {
@@ -180,6 +176,7 @@ EVALUATION_TOOLS = [
 def build_evaluation_instructions() -> str:
     return (
         EVALUATION_PROMPT
+        + "\n" + PLANNING_INSTRUCTIONS
         + "\n\nZEITKONTEXT\n"
         + current_time_context()
     )
@@ -194,7 +191,9 @@ def run_evaluation(trigger: str = "manual") -> dict:
     """
     run_id = create_run(trigger)
     try:
-        threads = list_threads(open_only=True, review_due_only=True, limit=50)
+        # Paused threads can still constrain the time available for other plans.
+        # Suggestion storage independently enforces their notification pause.
+        threads = list_threads(open_only=True, limit=50)
         memories = list_memories(limit=30)
         existing = [
             s

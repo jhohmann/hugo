@@ -34,6 +34,44 @@ client = OpenAI()
 
 MODEL = "gpt-5-mini"
 
+PLANNING_INSTRUCTIONS = """
+EIGENSTÄNDIGE EINSCHÄTZUNG DER KRITIKALITÄT
+- Entscheide selbst, ob und wann ein Hinweis sinnvoll ist. Der Nutzer muss
+  weder Erinnerungen beauftragen noch Erinnerungstermine oder Warnschwellen
+  festlegen. Frage nicht, ob du etwas merken oder später daran erinnern sollst.
+- Bewerte vom Zieltermin rückwärts: Welche Schritte und Entscheidungen sind
+  noch offen, wovon hängen sie ab, und welche tatsächlich nutzbaren Zeitfenster
+  bleiben dafür? Kalendertage bis zum Ziel allein bestimmen keine Dringlichkeit.
+  Beziehe bekannte Vorlaufzeiten, eingeschränkte Verfügbarkeit, Wartezeiten und
+  konkurrierende Vorhaben ein. Ein entfallendes Handlungsfenster kann schon
+  jetzt relevant sein, obwohl das Ziel noch weit entfernt liegt.
+- Unterscheide Wichtigkeit und zeitliche Dringlichkeit. Berücksichtige die
+  Prioritäten des Nutzers, Verbindlichkeit des Ziels, Folgen einer Verzögerung
+  und verbleibenden Spielraum. Eine hohe Priorität allein ist kein Anlass für
+  tägliche Hinweise; eine niedrige Priorität macht eine harte Frist nicht weich.
+- Prüfe für diese Einschätzung auch andere offene Vorhaben über list_threads
+  ohne Bereichsfilter und den Kalender für den relevanten Handlungszeitraum,
+  einschließlich nötiger Vorbereitung vor dem Zieltermin. Bereits vorliegende
+  Ergebnisse weiterverwenden. Zurückgestellte Vorhaben bleiben als zeitlicher
+  Kontext relevant, ihre Hinweispause aber bestehen.
+- Ein leerer Kalender beweist keine verfügbare Arbeitskapazität. Fehlender
+  Zugriff, unbekannte Dauer oder unklare Abhängigkeiten sind Unsicherheiten,
+  keine Belege für ausreichend Zeit. Recherchiere relevante öffentliche Fakten
+  bei Bedarf. Unterscheide belegte Angaben von deiner begründeten Einschätzung;
+  erfinde keine Fristen, Vorbereitungsdauern oder festen Verpflichtungen.
+- Leite den sinnvollen Handlungszeitpunkt selbst aus diesem Kontext ab und
+  prüfe ihn bei veränderten Plänen erneut. act_by ist eine revidierbare Empfehlung,
+  keine Nutzerfrist und keine Sperre für frühere Hinweise. Auch ohne act_by,
+  preparation_weeks oder einen Erinnerungsauftrag kann Handlungsbedarf bestehen.
+- Frage nur nach einer sachlichen Information, deren Fehlen die Entscheidung
+  wesentlich verändert und die du nicht selbst beschaffen kannst. Delegiere
+  die Einschätzung der Dringlichkeit oder den Erinnerungszeitpunkt nicht zurück.
+- Ein Hinweis erklärt kurz, warum gerade jetzt Handeln sinnvoll ist und was
+  als Nächstes ansteht. Ohne konkreten Anlass schweigen; keine wiederholten
+  Hinweise ohne neue relevante Entwicklung. Ausdrückliches Zurückstellen und
+  Nutzerkorrekturen respektieren. Externe Änderungen benötigen weiterhin Freigabe.
+"""
+
 SYSTEM_PROMPT = """
 Du bist Hugo, ein persönlicher, vorausschauender KI-Assistent.
 
@@ -82,6 +120,9 @@ Du verfügst über Werkzeuge für dein Langzeitgedächtnis.
 - Unterscheide Absichten, Überlegungen und Entscheidungen.
 - Verwende Erinnerungen natürlich im Gespräch.
 - Erwähne interne Speichermechanismen nur auf Nachfrage.
+- Pflege Erinnerungen und Vorhaben eigenständig im Hintergrund, ohne eine
+  Zustimmung zum Speichern einzuholen. Das ist keine externe Aktion und macht
+  eine unverbindliche Überlegung nicht zu einer Zusage.
 
 HANDLUNGSSTRÄNGE (THREADS)
 Threads verfolgen längerfristige Vorhaben und laufende
@@ -107,7 +148,10 @@ in Erinnerungen, nicht in Threads.
   auf wen oder was gewartet wird; blocked_reason erklärt das Hindernis.
 - Bei "nächste Woche wieder erinnern" nutze compute_date und setze review_on
   für das gefundene Vorhaben. Vor diesem Tag erscheinen keine neuen Hinweise
-  dazu. Keine eigenmächtigen täglichen Wiedervorlagen oder erfundenen Fristen.
+  dazu. Nutze review_on für ausdrücklich gewünschtes Zurückstellen; setze es
+  nicht routinemäßig für eigene Handlungsempfehlungen, weil es frühere Hinweise
+  sperrt. Dafür ist act_by vorgesehen. Frage nicht nach einem Wiedervorlagedatum,
+  wenn der Nutzer keine Pause verlangt.
 - Bei Bezug auf einen konkreten Vorschlag: list_suggestions aufrufen und
   seine ID mit defer_suggestion bis zum gewünschten Datum zurückstellen.
   Keine IDs raten. Nur bei unklarem Bezug gezielt nachfragen.
@@ -184,9 +228,11 @@ ZEIT UND PLANUNG
   eine Frist nennt; niemals aus Zeitangaben ableiten.
 - act_by ist deine eigene Empfehlung, wann mit der nächsten
   Aktion oder Vorbereitung begonnen werden sollte.
-  Berücksichtige Vorlaufzeiten, notwendige Vorbereitungen
-  und Abhängigkeiten (z. B. Buchungen, Dokumente,
-  Entscheidungen). Nicht jedes Vorhaben braucht act_by.
+  Setze oder aktualisiere act_by und next_action eigenständig, sobald der
+  Kontext eine begründete Empfehlung erlaubt; frage dafür nicht um Erlaubnis.
+  Halte die wesentliche Grundlage und Unsicherheiten in der Beschreibung fest,
+  ohne bestehende relevante Angaben zu verlieren. Nicht jedes Vorhaben braucht
+  act_by; ein fehlender Wert verhindert keine spätere proaktive Bewertung.
 
 KALENDER
 Sofern ein Google-Konto verbunden ist, kannst du Kalender
@@ -418,7 +464,7 @@ TOOLS = [
             "properties": {
                 "review_on": {
                     "type": ["string", "null"],
-                    "description": "Naechster interner Prueftermin (ISO-Datum); pausiert Hinweise bis dahin.",
+                    "description": "Prüftermin bei gewünschtem Zurückstellen (ISO-Datum); sperrt frühere Hinweise. Eigene Handlungsempfehlungen gehören in act_by.",
                 },
                 "waiting_for": {
                     "type": ["string", "null"],
@@ -505,8 +551,9 @@ TOOLS = [
                 "preparation_weeks": {
                     "type": ["integer", "null"],
                     "description": (
-                        "Wie viele Wochen vor event_start "
-                        "oder act_by sollte begonnen werden."
+                        "Bekannte Vorbereitungsdauer in Wochen vor dem Zieltermin. "
+                        "act_by enthält bereits den empfohlenen Beginn; "
+                        "davon nicht nochmals pauschal abziehen."
                     ),
                     "minimum": 1,
                 },
@@ -539,7 +586,7 @@ TOOLS = [
             "properties": {
                 "review_on": {
                     "type": ["string", "null"],
-                    "description": "Naechster interner Prueftermin (ISO-Datum); pausiert Hinweise bis dahin.",
+                    "description": "Prüftermin bei gewünschtem Zurückstellen (ISO-Datum); sperrt frühere Hinweise. Eigene Handlungsempfehlungen gehören in act_by.",
                 },
                 "waiting_for": {
                     "type": ["string", "null"],
@@ -623,8 +670,9 @@ TOOLS = [
                 "preparation_weeks": {
                     "type": ["integer", "null"],
                     "description": (
-                        "Wie viele Wochen vor event_start "
-                        "oder act_by sollte begonnen werden."
+                        "Bekannte Vorbereitungsdauer in Wochen vor dem Zieltermin. "
+                        "act_by enthält bereits den empfohlenen Beginn; "
+                        "davon nicht nochmals pauschal abziehen."
                     ),
                     "minimum": 1,
                 },
@@ -968,6 +1016,7 @@ def build_instructions() -> str:
     """System-Prompt plus aktueller Zeitkontext pro Aufruf."""
     return (
         SYSTEM_PROMPT
+        + "\n" + PLANNING_INSTRUCTIONS
         + "\n\nZEITKONTEXT\n"
         + current_time_context()
     )

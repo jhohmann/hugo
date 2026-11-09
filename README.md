@@ -784,6 +784,22 @@ Ein Ereignisende benötigt einen Anfang und darf nicht davor liegen. Offene Vorh
 
 Jeder Agentenaufruf erhält Datum, Uhrzeit und deutschen Wochentag in Europe/Berlin. `compute_date` unterstützt Tage, Wochen, Monate und Jahre einschließlich Monatsenden und Schaltjahren.
 
+Chat und Hintergrundauswertung erhalten dieselben Anweisungen zur eigenständigen
+Kritikalitätsbewertung: vom Zieltermin rückwärts anhand von Prioritäten,
+Verbindlichkeit, Verzögerungsfolgen, Abhängigkeiten und tatsächlich nutzbaren
+Handlungsfenstern. Dazu sollen andere Vorhaben und Kalender im relevanten
+Vorbereitungszeitraum geprüft werden. Fehlende Kalenderdaten oder unbekannte
+Dauern gelten als Unsicherheit, nicht als freie Kapazität. Die Einschätzung
+erfolgt durch das Modell, ohne feste Warnabstände oder Regeln für einzelne Lebensbereiche.
+
+Hugo soll interne Erinnerungen und Vorhaben ohne Speicherfreigabe pflegen und
+selbst entscheiden, wann ein Hinweis nützlich ist. Im Chat kann es begründete
+Handlungstermine (`act_by`) und nächste Schritte eigenständig aktualisieren.
+`act_by` ist eine revidierbare Empfehlung; frühere Hinweise bleiben möglich.
+`review_on` dient ausdrücklich gewünschtem Zurückstellen und soll nicht als
+automatisch gesetzte Warnschwelle verwendet werden. Rückfragen betreffen nur
+entscheidungsrelevante fehlende Sachangaben. Externe Änderungen bleiben freigabepflichtig.
+
 Fehlende Bezugspunkte bei relativen Zeitangaben führen zu einer Rückfrage. Datetimes ohne Zeitzone werden als UTC interpretiert.
 
 `update_thread` kann über `clear_fields` die Felder `review_on`, `waiting_for` und
@@ -815,6 +831,14 @@ Anlass zur Bewertung; das Modell entscheidet, ob ein konkreter Hinweis sinnvoll 
 ### Proaktive Auswertung
 
 Die Auswertung berücksichtigt offene Vorhaben, jüngste Erinnerungen und offene oder zurückgestellte Vorschläge. Sie verwendet lesende Werkzeuge und `create_suggestion` über den zentralen Agenten.
+
+Der Startkontext enthält bis zu 50 offene Vorhaben einschließlich zurückgestellter
+Vorhaben: Auch diese können den Spielraum anderer Pläne einschränken. Ihre
+Hinweispause bleibt durch die Vorschlagsspeicherung geschützt. Weitere Angaben
+kann das Modell über lesende Werkzeuge ermitteln; `compute_date` steht auch hier
+zur Verfügung. Die Auswertung entscheidet bei jedem Lauf neu über Anlass,
+Zeitpunkt und Priorität eines Vorschlags, auch ohne vorhandenes `act_by` oder
+`preparation_weeks`. Sie verändert weiterhin keine Vorhaben oder Erinnerungen.
 
 | Tabelle | Inhalt |
 |---|---|
@@ -1013,6 +1037,19 @@ Im Projektordner:
 | Docker | Gebautes Image und ausdrücklich aktivierter Smoke-Test |
 
 Datenbanktests werden ohne erreichbares PostgreSQL übersprungen. Tests nicht gegen eine produktive Datenbank ausführen.
+
+Verifikation der eigenständigen Zeitbewertung am 09.11.2026:
+
+- `tests/test_evaluation.py`, `tests/test_thread_tools.py`, `tests/test_follow_up.py`,
+  `tests/test_worker.py` und `tests/test_dates.py`: **56 Tests bestanden**, keine
+  übersprungen. Geprüft wurden unter anderem der Bewertungskontext mit
+  zurückgestellten Vorhaben, die weiterhin wirksame Hinweispause in temporären
+  PostgreSQL-Datenbanken sowie Werkzeug-, Datums- und Worker-Anbindung.
+- Modellantworten waren simuliert. Die gemeinsamen Anweisungen zur Kritikalität
+  sind damit technisch eingebunden; die Qualität der eigenständigen Einschätzung
+  und das Ausbleiben unnötiger Rückfragen sind noch nicht live nachgewiesen.
+  Nächster Schritt: echte Gespräche und geplante Auswertungen auf begründete,
+  rechtzeitige Hinweise und unnötige Wiederholungen beobachten.
 
 Verifikation der Webrecherche am 07.11.2026:
 

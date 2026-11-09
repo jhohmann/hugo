@@ -43,6 +43,12 @@ A successful Hugo is measured by **useful, timely interventions**, not by how mu
   must not replace checking relevant calendars and other open plans.
 - Hugo should not narrate its internal database operations in normal conversation.
 - Ask only questions that materially unblock progress.
+- Decide autonomously whether and when reminders are useful; do not ask the user
+  to approve internal memory/thread bookkeeping or choose warning thresholds.
+  Assess criticality from priorities, target dates, consequences of delay,
+  dependencies and actually usable time across ongoing plans. Reassess when
+  circumstances change; a distant deadline can already require action.
+  Keep this model-led and domain-independent, and respect explicit deferrals.
 - When the user says “weiter”, continue with the next sensible, testable development increment rather than revisiting settled decisions.
 - Prefer end-to-end, small, verifiable steps. Provide exact filenames and code changes when implementing.
 
