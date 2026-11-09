@@ -38,6 +38,46 @@ def test_thread_area_filter_and_detail(client, fake_storage):
     assert client.get("/ui/threads?tag=unknown").status_code == 400
 
 
+def test_reference_badges_picker_and_thread_chat(client, fake_storage, monkeypatch):
+    monkeypatch.setattr(web_routes, "conversation_threads", lambda ids: {7: [{"id": 5, "title": "Norwegen-Reise"}]})
+    monkeypatch.setattr(web_routes, "thread_conversations", lambda tid, page=1: {
+        "items": [{"id": 7, "preview": "Frage <script>bad()</script>",
+                   "last_linked": datetime(2026, 11, 9), "has_older": True,
+                   "messages": [{"role": "assistant", "content": "Antwort <script>bad()</script>"}]}],
+        "page": page, "has_more": True,
+    })
+    chat = client.get("/ui/chat/7").text
+    assert 'class="thread-code"' in chat and "V-5" in chat
+    assert 'href="/ui/threads/5"' in chat and 'id="chat-thread"' in chat
+    new = client.get("/ui/chat?thread_id=5")
+    assert new.status_code == 200 and "V-5: " in new.text
+    assert client.get("/ui/chat?thread_id=999").status_code == 404
+    detail = client.get("/ui/threads/5").text
+    assert "V-5" in detail and "Gespräche zu diesem Vorhaben" in detail
+    assert 'href="/ui/chat/7"' in detail and "Die letzten 12 Nachrichten" in detail
+    assert '&lt;script&gt;' in detail and '<script>bad()</script>' not in detail
+    assert "?chat_page=2#gespraeche" in detail
+    assert client.get("/ui/threads/5?chat_page=0").status_code == 422
+
+
+def test_reference_selection_without_javascript_and_errors(client, fake_storage, monkeypatch):
+    seen = []
+    monkeypatch.setattr(web_routes, "run_chat", lambda message, cid: seen.append(message) or {"conversation_id": 7})
+    response = client.post("/ui/chat", data={"message": "Was fehlt?", "thread_id": "5"}, follow_redirects=False)
+    assert response.status_code == 303 and seen == ["V-5: Was fehlt?"]
+    client.post("/ui/chat", data={"message": "V-5: Was fehlt?", "thread_id": "5"})
+    assert seen[-1] == "V-5: Was fehlt?"
+    from app.tools.thread_references import ThreadReferenceError
+    def missing(*_):
+        raise ThreadReferenceError("Vorhaben V-999 wurde nicht gefunden.")
+    monkeypatch.setattr(web_routes, "run_chat", missing)
+    error = client.post("/ui/chat", data={"message": "V-999: Entwurf"})
+    assert error.status_code == 400 and "V-999: Entwurf" in error.text
+    from app import main
+    monkeypatch.setattr(main, "run_chat", missing)
+    assert client.post("/chat", json={"message": "V-999"}).status_code == 400
+
+
 def test_thread_api_area_filter(client, monkeypatch):
     from app import main
     calls = []
@@ -53,6 +93,8 @@ def test_thread_api_area_filter(client, monkeypatch):
 @pytest.fixture
 def fake_storage(monkeypatch):
     """Ersetzt alle Datenzugriffe des Web-Moduls."""
+    monkeypatch.setattr(web_routes, "conversation_threads", lambda ids: {})
+    monkeypatch.setattr(web_routes, "thread_conversations", lambda tid, page=1: {"items": [], "page": page, "has_more": False})
     state = {
         "conversations": [
             {

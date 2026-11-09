@@ -7,6 +7,7 @@
 
 <article class="card thread-detail">
   <header class="thread-detail-head">
+    <span class="thread-code thread-code-large" title="Vorhaben-Kennung für den Chat">V-{{ thread.id }}</span>
     <h1>{{ thread.title }}</h1>
     <span class="status status-{{ thread.status }}">{{ fmt.thread_status_label(thread.status) }}</span>
     {% if thread.priority %}
@@ -79,8 +80,37 @@
     <dd>{{ thread.updated_at|de_datetime }}</dd>
   </dl>
 
-  <p class="muted">Änderungen an diesem Vorhaben besprichst du am besten im <a href="/ui/chat">Chat</a> mit Hugo.</p>
+  <div class="thread-chat-actions">
+    <a class="button button-primary" href="/ui/chat?thread_id={{ thread.id }}">Mit Hugo besprechen</a>
+    <span class="muted">Im Chat mit <strong>V-{{ thread.id }}</strong> direkt Bezug nehmen.</span>
+  </div>
 </article>
+
+<section class="thread-conversations" id="gespraeche" aria-labelledby="thread-chats-heading">
+  <div class="section-heading"><h2 id="thread-chats-heading">Gespräche zu diesem Vorhaben</h2></div>
+  {% for c in thread_chats['items'] %}
+  <details class="card thread-conversation"{% if loop.first %} open{% endif %}>
+    <summary><span class="thread-conversation-title">{{ c.preview or 'Unterhaltung' }}</span><time>{{ c.last_linked|de_datetime }}</time></summary>
+    <div class="thread-conversation-toolbar">
+      <span class="muted">{% if c.has_older %}Die letzten 12 Nachrichten{% else %}Gesprächsverlauf{% endif %} · kann weitere Themen enthalten</span>
+      <a href="/ui/chat/{{ c.id }}">Chat öffnen und weiterschreiben →</a>
+    </div>
+    <div class="thread-message-list" role="region" aria-label="Gesprächsverlauf" tabindex="0">
+      {% for m in c.messages %}
+      <div class="message {{ m.role }}"><div class="message-bubble">{{ m.content|source_links if m.role == 'assistant' else m.content }}</div></div>
+      {% endfor %}
+    </div>
+  </details>
+  {% else %}
+  <div class="card empty-thread-chat"><p>Noch kein Gespräch verknüpft.</p><p class="muted">Beginne mit „Mit Hugo besprechen“ oder erwähne V-{{ thread.id }} in einem bestehenden Chat.</p></div>
+  {% endfor %}
+  {% if thread_chats.page > 1 or thread_chats.has_more %}
+  <nav class="thread-chat-pagination" aria-label="Weitere Gespräche">
+    {% if thread_chats.page > 1 %}<a href="?chat_page={{ thread_chats.page - 1 }}#gespraeche">← Neuere Gespräche</a>{% endif %}
+    {% if thread_chats.has_more %}<a href="?chat_page={{ thread_chats.page + 1 }}#gespraeche">Ältere Gespräche →</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>
 
 {% if suggestions %}
 <section aria-label="Zugehörige Vorschläge">

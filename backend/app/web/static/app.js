@@ -72,6 +72,20 @@ document.addEventListener("DOMContentLoaded", function () {
   // Enter sendet (Umschalt+Enter = Zeilenumbruch).
   var chatInput = document.getElementById("chat-message");
   if (chatInput) {
+    var threadPicker = document.getElementById("chat-thread");
+    if (threadPicker) threadPicker.addEventListener("change", function () {
+      if (!threadPicker.value) return;
+      var reference = "V-" + threadPicker.value;
+      var present = new RegExp("(^|[^\\w/-])" + reference + "(?![\\w-])", "i");
+      if (!present.test(chatInput.value)) {
+        var start = chatInput.selectionStart;
+        var prefix = start && !/\s/.test(chatInput.value[start - 1]) ? " " : "";
+        chatInput.setRangeText(prefix + reference + " ", start, chatInput.selectionEnd, "end");
+      }
+      threadPicker.value = "";
+      chatInput.focus();
+      chatInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
     chatInput.addEventListener("keydown", function (event) {
       if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
         event.preventDefault();

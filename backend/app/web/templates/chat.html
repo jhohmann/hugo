@@ -13,6 +13,12 @@
         <li>
           <a href="/ui/chat/{{ c.id }}"{% if c.id == conversation_id %} class="active"{% endif %}>
             <span class="conversation-preview">{{ c.preview or "Unterhaltung " ~ c.id }}</span>
+            {% if c.threads %}
+            <span class="conversation-references">
+              {% for t in c.threads[:3] %}<span class="thread-code" title="{{ t.title }}">V-{{ t.id }}</span>{% endfor %}
+              {% if c.threads|length > 3 %}<span class="muted">+{{ c.threads|length - 3 }}</span>{% endif %}
+            </span>
+            {% endif %}
             <span class="conversation-meta">{{ c.last_activity|de_datetime if c.last_activity else c.created_at|de_datetime }}</span>
           </a>
         </li>
@@ -24,6 +30,14 @@
   </aside>
 
   <section class="chat-main">
+    {% if referenced_threads %}
+    <nav class="chat-references" aria-label="Vorhaben dieser Unterhaltung">
+      <span class="reference-label">Vorhaben</span>
+      {% for t in referenced_threads %}
+      <a class="thread-chip" href="/ui/threads/{{ t.id }}"><span class="thread-code">V-{{ t.id }}</span><span>{{ t.title }}</span></a>
+      {% endfor %}
+    </nav>
+    {% endif %}
     {% if error %}
     <p class="alert" role="alert">{{ error }}</p>
     {% endif %}
@@ -42,10 +56,20 @@
       {% if conversation_id %}
       <input type="hidden" name="conversation_id" value="{{ conversation_id }}">
       {% endif %}
+      <div class="chat-reference-picker">
+        <label for="chat-thread">Vorhaben referenzieren</label>
+        <select id="chat-thread" name="thread_id">
+          <option value="">Ohne Auswahl</option>
+          {% for t in available_threads %}<option value="{{ t.id }}">V-{{ t.id }} · {{ t.title }}</option>{% endfor %}
+        </select>
+        <span class="reference-hint">Oder direkt V-42 in die Nachricht schreiben.</span>
+      </div>
+      <div class="chat-compose-row">
       <label class="visually-hidden" for="chat-message">Nachricht an Hugo</label>
       <textarea id="chat-message" name="message" rows="2" required
         placeholder="Nachricht an Hugo …">{{ draft }}</textarea>
       <button type="submit" class="button button-primary">Senden</button>
+      </div>
     </form>
     <p class="loading-indicator" hidden>Hugo denkt nach …</p>
   </section>

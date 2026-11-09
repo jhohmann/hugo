@@ -185,6 +185,13 @@ Die Oberfläche unter `/ui` führt nach der Anmeldung zur Ansicht **Heute**. Inh
 - Neue Unterhaltung beginnen oder vorhandene fortsetzen.
 - Vollständigen Nachrichtenverlauf anzeigen.
 - Die 50 jüngsten Unterhaltungen anhand ihrer ersten Nutzernachricht auswählen.
+- Vorhaben über ihre sichtbare Kennung referenzieren, beispielsweise
+  „Was fehlt noch bei V-42?“. **Vorhaben referenzieren** fügt die Kennung an der
+  Cursorposition ein; ohne JavaScript wird die Auswahl beim Senden vorangestellt.
+  Die Auswahl zeigt bis zu 500 Vorhaben; bekannte Kennungen können immer direkt
+  eingegeben werden. Mehrere Kennungen in einer Nachricht sind möglich (höchstens zehn).
+- Die Chatliste zeigt zugehörige Vorhaben als kompakte blaue Kennungen; über dem
+  Gespräch führen Kennung und Titel direkt zur Vorhabenseite.
 - Entwurf bei einem Agentenfehler erhalten.
 - Mit **Enter** senden, mit **Shift+Enter** einen Zeilenumbruch einfügen.
 - Der Nachrichtenverlauf scrollt innerhalb der verfügbaren Bildschirmhöhe;
@@ -216,6 +223,13 @@ Vorschläge entstehen durch manuelle oder geplante Auswertungen. Beim Anzeigen w
 - Gruppierung nach Aktiv, Wartet und Idee; Erledigt und Archiviert sind einklappbar.
 - Übersicht über nächsten Schritt, Priorität, Ereigniszeitraum und Fristen.
 - Detailansicht mit Beschreibung, ursprünglicher Zeitangabe und zugehörigen Vorschlägen.
+- Sichtbare Kennung **V-ID** in Liste und Detailkopf; **Mit Hugo besprechen** öffnet
+  einen neuen Chat mit vorausgefüllter Referenz.
+- **Gespräche zu diesem Vorhaben** zeigt verknüpfte Unterhaltungen aufklappbar,
+  jeweils mit den letzten zwölf Nachrichten und einem Link zum vollständigen
+  Chat zum Weiterschreiben. Fünf Gespräche je Seite, weitere über Seitennavigation.
+  Eine Unterhaltung kann mehrere Vorhaben behandeln; der eingeblendete Verlauf
+  enthält dann auch andere Themen.
 - Wiedervorlage und **Wartet auf** für offene Rückmeldungen oder andere Voraussetzungen.
 
 Im Chat lässt sich beispielsweise „Warte auf das Angebot von Müller; nächste Woche
@@ -244,7 +258,8 @@ Die Oberfläche verwendet serverseitige Jinja2-Templates und lokale CSS-/JavaScr
 - Hervorhebung hoher Prioritäten ab P4 und überfälliger Daten.
 - Formulare funktionieren ohne JavaScript; Ladeanzeigen, Bestätigungsdialoge und Enter-zum-Senden benötigen JavaScript.
 
-Listen sind begrenzt und haben keine vollständige Seitennavigation. Einklappbare Bereiche laden ihre Inhalte nicht separat nach.
+Listen sind begrenzt; die Gespräche auf Vorhabenseiten haben eine Seitennavigation.
+Einklappbare Bereiche laden ihre Inhalte nicht separat nach.
 
 ## Anmeldung und Sitzungen
 
@@ -624,6 +639,7 @@ Die Pfade beziehen sich auf `backend/app/`.
 | `agent/assistant.py` | Systemprompt und begrenzte Tool-Calling-Schleife |
 | `agent/chat_context.py` | Budgetabhängige Verdichtung älterer Gesprächsteile und vollständiger jüngster Verlauf |
 | `storage/conversation_context.py` | Gespeicherte Zusammenfassungen mit Nachrichtenmarke und Schutz vor konkurrierenden Updates |
+| `storage/thread_chats.py`, `tools/thread_references.py` | Explizite Vorhabenreferenzen, Nachrichtenverknüpfungen und Gesprächsansichten |
 | `agent/web_research.py` | Webrecherche-Konfiguration, Rechercheanweisungen und dauerhafte Quellenlinks |
 | `agent/evaluation.py` | Proaktive Auswertung über dieselbe Schleife |
 | `calendar/` | OAuth, Google-REST-API, Konfliktprüfung und freigegebene Ausführung |
@@ -757,6 +773,23 @@ ist dadurch noch nicht gegen gleichzeitige Nutzernachrichten serialisiert.
 | `archived` | Archiviert |
 
 `thread_memories` und `thread_messages` verknüpfen Vorhaben mit Wissen und Quellnachrichten.
+
+Die sichtbare Kennung `V-42` entspricht der vorhandenen numerischen Vorhaben-ID 42;
+es gibt keinen zweiten Nummernkreis. Der Chatdienst prüft ausdrücklich geschriebene
+Kennungen vor dem Speichern gegen den aktuellen Bestand und reicht die gefundenen
+Vorhaben als Kontextdaten an das Modell weiter, auch bei verdichteter Chathistorie.
+Eine Referenz verändert das Vorhaben nicht. Ungültige oder unbekannte Kennungen
+führen zu HTTP 400 mit erhaltenem Entwurf in der Oberfläche. Das gilt auch für
+Referenzen im Nachrichtenfeld der JSON-API; deren Anfrageformat bleibt unverändert.
+
+Explizite Referenzen verknüpfen die Nutzernachricht über `thread_messages`; nach
+einer Antwort werden deren Verknüpfungen übernommen. Dabei werden auch vom Modell
+beim Anlegen/Aktualisieren eines Vorhabens erzeugte Bezüge berücksichtigt.
+Die Ansichten leiten Gesprächszugehörigkeit aus diesen Nachrichtenverknüpfungen
+ab. Bestehende Verknüpfungen werden sichtbar; alte Gespräche ohne solche Bezüge
+werden nicht rückwirkend semantisch zugeordnet. Eine spätere explizite Referenz
+kann eine bestehende Unterhaltung zuordnen. Die bestehenden Tabellen reichen aus;
+für diese Funktion ist keine neue Migration nötig.
 
 `thread_tags` ordnet einem Vorhaben die Bereiche `arbeit` und `privat` zu.
 Die Zuordnung erfolgt über den Chat, beispielsweise „Ordne die Fortbildung Arbeit zu“
@@ -1081,6 +1114,24 @@ Im Projektordner:
 | Docker | Gebautes Image und ausdrücklich aktivierter Smoke-Test |
 
 Datenbanktests werden ohne erreichbares PostgreSQL übersprungen. Tests nicht gegen eine produktive Datenbank ausführen.
+
+Verifikation der Vorhabenreferenzen am 09.11.2026:
+
+- `tests/test_thread_references.py`, `tests/test_conversation_context.py`,
+  `tests/test_web.py`, `tests/test_thread_tools.py` und `tests/test_follow_up.py`:
+  **78 Tests bestanden**, keine übersprungen. Echte PostgreSQL-Prüfungen belegen
+  die eindeutige Zuordnung gleichnamiger Vorhaben, aktuellen Kontext im
+  Modellaufruf, Nachrichten-/Antwortverknüpfungen und Seitennavigation.
+  Ungültige Referenzen, mehrere Bezüge, HTML-Escaping und Auswahl ohne
+  JavaScript sind ebenfalls geprüft. Modellantworten waren simuliert.
+- `tests/test_chat_browser.py`: **2 Browserprüfungen bestanden** mit lokalem Edge,
+  Desktop und Smartphone einschließlich Tastaturverkleinerung, Kennungsauswahl
+  ohne Duplikate und eingeblendeten Gesprächen. Screenshots liegen unversioniert
+  unter `logs/chat-*.png` und `logs/thread-chat-*.png`.
+- Keine Schemaänderung und kein Zugriff auf echte Kalender oder Modelle nötig.
+  Nächster Schritt: Zuordnung und Lesbarkeit bei alltäglichen Gesprächen mit
+  mehreren Vorhaben beobachten. Frühere Gespräche ohne gespeicherten Bezug
+  bleiben zunächst unzugeordnet.
 
 Verifikation der Gesprächsverdichtung am 09.11.2026:
 

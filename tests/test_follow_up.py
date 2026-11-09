@@ -12,7 +12,7 @@ from psycopg.conninfo import make_conninfo
 from app import auth, migrate
 from app.agent import assistant, evaluation
 from app.main import app
-from app.storage import database, suggestions, threads
+from app.storage import database, suggestions, threads, thread_chats
 from app.tools import dates
 
 
@@ -28,7 +28,7 @@ def store(monkeypatch):
     try:
         assert migrate.run_migrations(dsn)["status"] == "ok"
         connect = lambda: psycopg.connect(dsn)
-        for module in (database, suggestions, threads):
+        for module in (database, suggestions, threads, thread_chats):
             monkeypatch.setattr(module, "get_connection", connect)
         vector = [1.0] + [0.0] * 383
         monkeypatch.setattr(threads, "embed_document", lambda _: vector)

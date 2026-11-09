@@ -8,7 +8,7 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -30,6 +30,8 @@ from app.storage.suggestions import (
     update_suggestion_status,
 )
 from app.storage.threads import get_thread, list_threads, validate_tag
+from app.storage.thread_chats import conversation_threads, thread_conversations
+from app.tools.thread_references import ThreadReferenceError, reference_ids
 from app.tools.dates import today_berlin
 from app.web import formatting as fmt
 from app.web.timeline import TimelineData, demo_timeline
@@ -106,12 +108,19 @@ def _render_chat(
     error: str | None = None,
     status_code: int = 200,
 ):
+    conversations = list_conversations(limit=50)
+    ids = [c["id"] for c in conversations]
+    if conversation_id and conversation_id not in ids:
+        ids.append(conversation_id)
+    refs = conversation_threads(ids)
     return templates.TemplateResponse(
         request,
         "chat.html",
         {
             **_nav("chat"),
-            "conversations": list_conversations(limit=50),
+            "conversations": [{**c, "threads": refs.get(c["id"], [])} for c in conversations],
+            "referenced_threads": refs.get(conversation_id, []),
+            "available_threads": list_threads(limit=500),
             "conversation_id": conversation_id,
             "messages": messages or [],
             "draft": draft,
@@ -122,8 +131,10 @@ def _render_chat(
 
 
 @router.get("/chat")
-def chat_new(request: Request):
-    return _render_chat(request, conversation_id=None)
+def chat_new(request: Request, thread_id: int | None = None):
+    if thread_id is not None and (thread_id < 1 or thread_id > 9223372036854775807 or get_thread(thread_id) is None):
+        return _error_page(request, 404, "Dieses Vorhaben wurde nicht gefunden.")
+    return _render_chat(request, conversation_id=None, draft=f"V-{thread_id}: " if thread_id else "")
 
 
 @router.get("/chat/{conversation_id}")
@@ -143,6 +154,7 @@ def chat_send(
     request: Request,
     message: str = Form(""),
     conversation_id: str = Form(""),
+    thread_id: str = Form(""),
 ):
     message = message.strip()
     try:
@@ -161,7 +173,16 @@ def chat_send(
         )
 
     try:
+        if thread_id:
+            if not thread_id.isascii() or not thread_id.isdecimal() or len(thread_id) > 19:
+                raise ThreadReferenceError("Ungültige Vorhaben-Kennung.")
+            if int(thread_id) not in reference_ids(message):
+                message = f"V-{thread_id}: {message}"
         result = run_chat(message, conv_id)
+    except ThreadReferenceError as exc:
+        return _render_chat(request, conversation_id=conv_id,
+                            messages=get_messages(conv_id) if conv_id else [],
+                            draft=message, error=str(exc), status_code=400)
     except ConversationNotFoundError:
         return _error_page(
             request, 404, "Diese Unterhaltung wurde nicht gefunden."
@@ -307,7 +328,7 @@ def threads(request: Request, tag: str | None = None):
 
 
 @router.get("/threads/{thread_id}")
-def thread_detail(request: Request, thread_id: int):
+def thread_detail(request: Request, thread_id: int, chat_page: int = Query(1, ge=1, le=1000000)):
     thread = get_thread(thread_id)
     if thread is None:
         return _error_page(
@@ -325,6 +346,7 @@ def thread_detail(request: Request, thread_id: int):
             **_nav("threads"),
             "thread": thread,
             "suggestions": related,
+            "thread_chats": thread_conversations(thread_id, page=chat_page),
             "fmt": fmt,
         },
     )

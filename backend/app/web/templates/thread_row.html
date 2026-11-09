@@ -1,6 +1,6 @@
 <article class="card thread-row">
   <div class="thread-row-main">
-    <a class="thread-title" href="/ui/threads/{{ t.id }}">{{ t.title }}</a>
+    <a class="thread-title" href="/ui/threads/{{ t.id }}"><span class="thread-code">V-{{ t.id }}</span> {{ t.title }}</a>
     {% if t.next_action %}
     <p class="next-action">Nächster Schritt: {{ t.next_action }}</p>
     {% endif %}
