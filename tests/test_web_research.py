@@ -67,6 +67,8 @@ def test_web_and_function_results_continue_in_same_loop(monkeypatch, caplog):
     result = assistant.run_tool_loop("Test", [], [{"type": "function", "name": "search_events"}])
     assert "[Veranstalter](https://example.org/race)" in result
     assert [r["max_tool_calls"] for r in requests] == [3, 2]
+    assert all(r["text"] == {"verbosity": "low"} for r in requests)
+    assert all(r["max_output_tokens"] == 4000 for r in requests)
     assert requests[1]["input"][0] == search()
     assert requests[1]["input"][-1]["type"] == "function_call_output"
     assert json.loads(requests[1]["input"][-1]["output"]) == {"events": []}
@@ -107,6 +109,7 @@ def test_disabled_search_and_evaluation_share_settings(monkeypatch):
     assert all(t["type"] == "function" for t in captured["tools"])
     assert "max_tool_calls" not in captured
     assert "deaktiviert" in captured["instructions"]
+    assert captured["text"] == {"verbosity": "low"}
     monkeypatch.setenv("HUGO_WEB_SEARCH_ENABLED", "true")
     assistant.run_tool_loop(evaluation.build_evaluation_instructions(), [], evaluation.EVALUATION_TOOLS)
     assert captured["tools"][-1] == web_research.WEB_SEARCH_TOOL

@@ -2,6 +2,13 @@
 
 Hugo ist ein proaktiver persönlicher Assistent für Zeitplanung, längerfristige Vorhaben und Erinnerungen. Ein zentraler Agent verbindet Informationen, verfolgt offene Themen und schlägt nächste Schritte vor.
 
+Im Chat stehen zeitliche Fragen im Mittelpunkt: Termine, Fristen, Vorlauf und
+das Zusammenspiel mit anderen Aktivitäten. Hugo soll normalerweise in 2–4 kurzen
+Sätzen antworten und höchstens einen konkreten nächsten Schritt nennen.
+Allgemeine Anleitungen und Checklisten gibt es auf ausdrücklichen Wunsch.
+Bei Terminwahl und Machbarkeit prüft er auch andere offene Vorhaben und den
+Kalender; fehlende Informationen bleiben erkennbar.
+
 - **Sprache:** Deutsch
 - **Zeitzone:** Europe/Berlin
 - **Entwicklung:** Python lokal, PostgreSQL in Docker
@@ -628,6 +635,14 @@ Die Pfade beziehen sich auf `backend/app/`.
 
 UI und JSON-API verwenden dieselben Fach- und Speicherfunktionen.
 
+Der zentrale Modellaufruf verwendet `text.verbosity=low` für kurze Ausgaben
+([OpenAI Docs](https://developers.openai.com/cookbook/examples/gpt-5/gpt-5_new_params_and_tools)).
+Der Chatprompt konkretisiert den zeitlichen Fokus, knappe Antworten und den
+Abgleich mit anderen Vorhaben; geplante Auswertungen verlangen ebenfalls kurze,
+zeitbezogene Vorschläge. Das Ausgabetokenbudget bleibt für Reasoning und
+Werkzeugaufrufe erhalten. Antworten werden nicht nachträglich abgeschnitten;
+ausdrücklich gewünschte ausführliche Antworten bleiben möglich.
+
 ### Internetrecherche
 
 Hugo kann öffentliche aktuelle Informationen über die native
@@ -955,6 +970,20 @@ Die meisten JSON-Listen begrenzen `limit` auf 1–500. Für vollständige Datens
 
 ## Tests und Diagnose
 
+Prüfung des zeitlichen Antwortfokus: zwei gezielte Tool-Loop-Tests bestanden
+(`tests/test_web_research.py`, Auswahl `web_and_function_results_continue` und
+`disabled_search_and_evaluation`). Sie prüfen unter anderem `verbosity=low`
+bei Chat-/Webwerkzeugen und der geplanten Bewertung bei erhaltenem Tokenbudget.
+Zwei anschließende echte Modellproben mit fiktiven Werkzeugdaten
+(`scripts/check_chat_focus.py`) lieferten nach Promptnachschärfung Antworten mit
+26 bzw. 27 Wörtern: Kalenderkonflikt plus anschließende Projektabgabe nach
+`list_threads`/`list_events`, sowie eine gezielte Monatsfrage bei offenem Zeitraum.
+Der erste Probelauf war bereits kurz, hatte aber andere Vorhaben nicht abgefragt
+und interne Begriffe ausgegeben. Diese Punkte waren im zweiten Lauf korrigiert.
+Keine echten Nutzer-, Kalender- oder Gesprächsdaten gelesen oder verändert;
+die zwei Beispiele belegen keine allgemeine Erfolgsquote, keinen Worker-Lauf
+und keine bereits erfolgte Übernahme auf Proxmox.
+
 Chat-Layout am 08.11.2026: zwei gezielte Edge-Browserprüfungen bestanden
 (`tests/test_chat_browser.py`, opt-in mit `HUGO_BROWSER_TESTS=1`; Playwright und
 lokales Edge erforderlich). Geprüft wurden lange Verläufe, Leseposition beim
@@ -1080,6 +1109,7 @@ python scripts/check_google_calendar.py
 | `check_embeddings.py` | Vergleicht Beispielsätze im Speicher; keine Datenbankeinträge |
 | `check_google_calendar.py` | Liest `credentials.json`, schreibt `token.json` und listet Termintitel |
 | `check_web_research.py` | Öffentliche Romaniacs-Frage über Hugos Recherchepfad; keine DB-/Kalenderwerkzeuge, echte API-Kosten |
+| `check_chat_focus.py` | Zwei Modellproben für kurze Zeitplanung und Terminkonflikte mit erfundenen Werkzeugdaten; keine DB-/Kalenderzugriffe, echte API-Kosten |
 
 Begrenzten Webrecherche-Live-Test im Projektordner ausführen:
 
