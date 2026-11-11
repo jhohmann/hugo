@@ -1,10 +1,10 @@
 """Native Webrecherche und dauerhafte Quellenlinks, ohne zweiten Agenten."""
 
-import os
 import re
 from urllib.parse import urlsplit
 
 from app.tools.links import SOURCE_LINK_PATTERN, source_url
+from app.settings import get_value
 
 WEB_SEARCH_TOOL = {
     "type": "web_search",
@@ -44,12 +44,12 @@ _CITATION_MARKER = re.compile(r"\ue200cite\ue202[^\ue201]*\ue201")
 
 
 def web_search_limit() -> int:
-    enabled = os.getenv("HUGO_WEB_SEARCH_ENABLED", "true").strip().lower()
+    enabled = get_value("HUGO_WEB_SEARCH_ENABLED", "true").strip().lower()
     if enabled in {"false", "0", "no", "off"}:
         return 0
     if enabled not in {"true", "1", "yes", "on"}:
         raise ValueError("HUGO_WEB_SEARCH_ENABLED muss true oder false sein.")
-    value = int(os.getenv("HUGO_WEB_SEARCH_MAX_CALLS", "3"))
+    value = int(get_value("HUGO_WEB_SEARCH_MAX_CALLS", "3"))
     if not 1 <= value <= 10:
         raise ValueError("HUGO_WEB_SEARCH_MAX_CALLS muss zwischen 1 und 10 liegen.")
     return value

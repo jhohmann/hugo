@@ -10,6 +10,9 @@
 }
 .remember-label { display: flex; align-items: center; gap: 8px; }
 .logout-form { margin-left: auto; }
+.header-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.settings-link { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; color: var(--muted); border-radius: var(--radius); }
+.settings-link:hover, .settings-link.active { color: var(--accent); background: var(--bg); }
 .header-inner { flex-wrap: wrap; }
 
 
@@ -601,16 +604,14 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .reference-hint { display: none; }
   .chat-reference-picker select { flex: 1; max-width: none; }
   .thread-conversation > summary { gap: 8px; flex-wrap: wrap; }
-  .header-inner { gap: 12px; }
-  .main-nav a { padding: 6px 9px; }
+  .header-inner { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  .main-nav { grid-column: 1 / -1; grid-row: 2; justify-content: space-between; min-width: 0; overflow-x: auto; }
+  .header-actions { grid-column: 2; grid-row: 1; margin: 0; }
+  .main-nav a { padding: 6px; font-size: .9rem; white-space: nowrap; }
 
   .chat-layout { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
   .chat-main { flex: 1; }
   .chat-sidebar { flex: none; max-height: 30%; }
-  .chat-page .header-inner { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
-  .chat-page .main-nav { grid-column: 1 / -1; grid-row: 2; justify-content: space-between; }
-  .chat-page .logout-form { grid-column: 2; grid-row: 1; margin: 0; }
-  .chat-page .main-nav a { padding: 6px; font-size: .9rem; }
 
   .conversation-list { max-height: 30vh; }
 

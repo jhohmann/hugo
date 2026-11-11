@@ -1,10 +1,10 @@
 
 import json
 import logging
-import os
 from datetime import date, datetime, time
 
 from app.agent.model_client import ModelClient
+from app.settings import get_value, snapshot
 
 from app.agent.web_research import (
     RESEARCH_INSTRUCTIONS, WEB_SEARCH_TOOL, cited_response_text, web_search_limit,
@@ -32,8 +32,6 @@ from app.tools.dates import (
 
 logger = logging.getLogger(__name__)
 client = ModelClient()
-
-MODEL = os.getenv("HUGO_MODEL") or "gpt-5-mini"
 
 PLANNING_INSTRUCTIONS = """
 EIGENSTÄNDIGE EINSCHÄTZUNG DER KRITIKALITÄT
@@ -1320,6 +1318,7 @@ def execute_tool(
     raise ValueError(f"Unknown tool: {name}")
 
 
+@snapshot()
 def run_tool_loop(
     instructions: str,
     messages: list[dict],
@@ -1354,7 +1353,7 @@ def run_tool_loop(
                 "nenne diese Einschränkung; behaupte keine durchgeführte Recherche."
             )
         response = client.responses.create(
-            model=MODEL,
+            model=get_value("HUGO_MODEL") or "gpt-5.6-terra",
             instructions=instructions + "\n" + web_status,
             input=conversation,
             tools=round_tools,

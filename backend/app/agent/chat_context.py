@@ -2,9 +2,9 @@
 
 import json
 import logging
-import os
 
-from app.agent.assistant import MODEL, client
+from app.agent.assistant import client
+from app.settings import get_value, snapshot
 from app.storage.conversation_context import load_context, save_summary
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def estimate_tokens(messages: list[dict]) -> int:
 
 
 def history_budget() -> int:
-    budget = int(os.getenv("HUGO_CHAT_HISTORY_TOKENS", "12000"))
+    budget = int(get_value("HUGO_CHAT_HISTORY_TOKENS", "12000"))
     if not 2000 <= budget <= 60000:
         raise ValueError("HUGO_CHAT_HISTORY_TOKENS muss zwischen 2000 und 60000 liegen.")
     return budget
@@ -57,9 +57,10 @@ def as_input(summary: dict | None, messages: list[dict]) -> list[dict]:
     return result
 
 
+@snapshot()
 def summarize(previous: str, messages: list[dict], max_chars: int) -> str:
     response = client.with_options(timeout=60, max_retries=0).responses.create(
-        model=MODEL,
+        model=get_value("HUGO_MODEL") or "gpt-5.6-terra",
         instructions=SUMMARY_INSTRUCTIONS.format(max_chars=max_chars, target_chars=max_chars // 2),
         input=[{"role": "user", "content": json.dumps({
             "previous_summary": previous, "messages": messages,

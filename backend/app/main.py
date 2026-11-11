@@ -29,10 +29,11 @@ from app.storage.database import (
     list_conversations,
 )
 from app.web.routes import WEB_DIR, router as web_router
+from app.version import VERSION
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Hugo", version="0.4.0")
+app = FastAPI(title="Hugo", version=VERSION)
 app.add_middleware(AuthenticationMiddleware)
 app.include_router(auth_router)
 
@@ -64,7 +65,7 @@ class SuggestionPatch(BaseModel):
 def root():
     return {
         "name": "Hugo",
-        "version": "0.4.0",
+        "version": VERSION,
         "status": "running",
     }
 

@@ -55,5 +55,6 @@ def public_status():
         "connected": bool(registration.get("refresh_token")),
         "limited": bool(registration.get("usage_blocked")),
         "retry_at": datetime.fromtimestamp(retry, timezone.utc) if retry else None,
-        "last": {key: last.get(key) for key in ("route", "model", "input_tokens", "output_tokens")},
+        "last": {**{key: last.get(key) for key in ("route", "model", "input_tokens", "output_tokens")},
+                 "at": datetime.fromtimestamp(last["at"], timezone.utc) if last.get("at") else None},
     }

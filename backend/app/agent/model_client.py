@@ -4,6 +4,7 @@ import os
 import logging
 
 from openai import APIConnectionError, APIStatusError, OpenAI
+from app.settings import get_value, snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -17,18 +18,18 @@ class PlanQuotaExceeded(ModelAccessError):
 
 
 def provider():
-    value = os.getenv("HUGO_MODEL_PROVIDER", "api")
+    value = get_value("HUGO_MODEL_PROVIDER", "api")
     if value not in {"api", "chatgpt"}:
         raise ValueError("HUGO_MODEL_PROVIDER muss api oder chatgpt sein.")
     return value
 
 
 def fallback_enabled():
-    return os.getenv("HUGO_API_FALLBACK_ENABLED", "false").lower() == "true"
+    return get_value("HUGO_API_FALLBACK_ENABLED", "false").lower() == "true"
 
 
 def retry_seconds():
-    value = int(os.getenv("HUGO_CHATGPT_RETRY_SECONDS", "1800"))
+    value = int(get_value("HUGO_CHATGPT_RETRY_SECONDS", "1800"))
     if not 60 <= value <= 86400:
         raise ValueError("HUGO_CHATGPT_RETRY_SECONDS muss zwischen 60 und 86400 liegen.")
     return value
@@ -40,7 +41,7 @@ def usage_status():
         return {"provider": "api"}
     return {**model_usage.public_status(), "provider": "chatgpt",
             "fallback": fallback_enabled(), "api_ready": bool(os.getenv("OPENAI_API_KEY")),
-            "fallback_model": os.getenv("HUGO_API_FALLBACK_MODEL") or "gpt-5-mini"}
+            "fallback_model": get_value("HUGO_API_FALLBACK_MODEL") or "gpt-5.6-terra"}
 
 
 def plan_error(code):
@@ -57,20 +58,31 @@ def plan_error(code):
 class ModelClient:
     """Keep callers and test doubles independent of the selected billing path."""
 
-    def __init__(self, *, allow_api_fallback=True, **options):
+    def __init__(self, *, allow_api_fallback=True, provider_override=None, **options):
+        if provider_override not in {None, "api", "chatgpt"}:
+            raise ValueError("Unbekannter KI-Zugang.")
         self.options = options
         self.allow_api_fallback = allow_api_fallback
+        self.provider_override = provider_override
         self.responses = self
 
     def with_options(self, **options):
-        return ModelClient(allow_api_fallback=self.allow_api_fallback, **{**self.options, **options})
+        return ModelClient(allow_api_fallback=self.allow_api_fallback, provider_override=self.provider_override,
+                           **{**self.options, **options})
 
     def create(self, **request):
-        if provider() == "api":
-            with OpenAI(**self.options) as client:
-                return client.responses.create(**request)
+        with snapshot():
+            return self._create(request)
 
+    def _create(self, request):
         from app.agent import model_usage
+        if (self.provider_override or provider()) == "api":
+            with OpenAI(**self.options) as client:
+                response = client.responses.create(**request)
+            if response.status == "completed":
+                model_usage.record_success("api", response)
+            return response
+
         attempt, probe = model_usage.reserve_plan_attempt(retry_seconds())
         if attempt:
             try:
@@ -91,7 +103,7 @@ class ModelClient:
 
     def _api_fallback(self, request):
         request = dict(request)
-        request["model"] = os.getenv("HUGO_API_FALLBACK_MODEL") or "gpt-5-mini"
+        request["model"] = get_value("HUGO_API_FALLBACK_MODEL") or "gpt-5.6-terra"
         # A different model/account cannot consume encrypted reasoning from the plan.
         # Preserve completed tool calls + results, so actions are not replayed.
         request["input"] = [
@@ -108,8 +120,8 @@ class ModelClient:
 
     def _plan_response(self, request):
         from app.agent.chatgpt_auth import RESOURCE, access_token
-        if not os.getenv("HUGO_MODEL"):
-            raise ModelAccessError("Bitte HUGO_MODEL auf ein Modell aus dem ChatGPT-Modellkatalog setzen.")
+        if not request.get("model"):
+            raise ModelAccessError("Bitte ein Modell aus dem ChatGPT-Modellkatalog wählen.")
         # The direct plan preview requires streaming, stateless input and namespaced functions.
         request = dict(request)
         if any(item.get("type") == "function_call" and item.get("namespace") != "hugo"

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen – Hugo{% endblock %}
+{% block content %}
+{% set s = preferences['values'] %}
+<div class="page-head">
+  <div><h1>Einstellungen</h1><p class="page-subtitle">Verbindungen, KI und Hugos tägliche Arbeit.</p></div>
+  <span class="status">Hugo {{ version }}</span>
+</div>
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% if notice %}<p class="alert alert-ok" role="status">{{ notice }}</p>{% endif %}
+
+<div class="settings-connections">
+  <section class="card settings-card" aria-labelledby="calendar-heading">
+    <div class="settings-card-head"><h2 id="calendar-heading">Google Kalender</h2>
+      <span class="status{% if calendar_connected and calendar_configured %} status-active{% endif %}">{% if not calendar_configured %}Nicht eingerichtet{% elif calendar_connected %}Angemeldet{% else %}Nicht verbunden{% endif %}</span>
+    </div>
+    <p class="muted">{% if not calendar_configured %}Die Google-Zugangsdaten fehlen in der Serverkonfiguration.{% elif calendar_connected %}Anmeldung gespeichert. Der Zugriff lässt sich hier prüfen.{% else %}Verbinde deinen Kalender, damit Hugo Termine und verfügbare Zeit berücksichtigen kann.{% endif %}</p>
+    <div class="actions">
+      {% if calendar_configured and not calendar_connected %}<a class="button button-small" href="/ui/kalender/auth/start">Kalender verbinden</a>{% endif %}
+      {% if calendar_connected and calendar_configured %}<form method="post" action="/ui/settings/calendar-check"><button class="button button-small">Verbindung prüfen</button></form>{% endif %}
+      <a class="button button-small" href="/ui/kalender">Kalender verwalten</a>
+    </div>
+  </section>
+  <section class="card settings-card" aria-labelledby="mail-heading">
+    <div class="settings-card-head"><h2 id="mail-heading">Mail</h2><span class="status">Geplant</span></div>
+    <p class="muted">Hier findet später die Mail-Verbindung ihren Platz. Aktuell ist kein Mail-Zugriff eingerichtet.</p>
+  </section>
+</div>
+
+<section class="card settings-card" aria-labelledby="agent-heading">
+  <div class="settings-card-head"><h2 id="agent-heading">KI-Agent</h2><span class="status">{{ 'ChatGPT-Abo' if active_settings.HUGO_MODEL_PROVIDER == 'chatgpt' else 'OpenAI API' }}</span></div>
+  <dl class="settings-facts">
+    <div><dt>Aktuelles Modell</dt><dd>{{ active_settings.HUGO_MODEL }}</dd></div>
+    <div><dt>ChatGPT-Anmeldung</dt><dd>{{ 'Gespeichert' if model_status.connected else 'Nicht verbunden' }}</dd></div>
+    <div><dt>API-Schlüssel</dt><dd>{{ 'Hinterlegt' if api_ready else 'Nicht hinterlegt' }}</dd></div>
+    <div><dt>Abo-Kontingent</dt><dd>{% if model_status.limited %}Grenze gemeldet{% else %}Restkontingent nicht abrufbar{% endif %}</dd></div>
+  </dl>
+  {% if active_settings.HUGO_MODEL_PROVIDER == 'chatgpt' and model_status.limited %}
+  <p>{% if active_settings.HUGO_API_FALLBACK_ENABLED == 'true' and api_ready %}Hugo nutzt die API-Reserve.{% else %}Die Abo-Nutzung pausiert; aktuell ist keine API-Reserve verfügbar.{% endif %}
+    {% if model_status.retry_at %}Frühester erneuter Abo-Versuch: {{ model_status.retry_at|de_datetime }} (Berlin), beim nächsten Aufruf.{% endif %}</p>
+  {% endif %}
+  {% if model_status.last.model %}
+  <p class="muted">Letzter erfolgreicher Modellaufruf: {{ model_status.last.model }} · {{ 'ChatGPT-Abo' if model_status.last.route == 'chatgpt' else 'API' }}{% if model_status.last.at %} · {{ model_status.last.at|de_datetime }}{% endif %}<br>
+    {% if model_status.last.input_tokens is not none %}{{ model_status.last.input_tokens }} Eingabe- / {{ model_status.last.output_tokens }} Ausgabetokens.{% endif %}</p>
+  {% endif %}
+  <p class="muted">Gespeicherte Zugangsdaten bestätigen noch keine aktuelle Erreichbarkeit. Restkontingente zeigt Hugo an, sobald der Anbieter sie abrufbar macht.</p>
+  <a class="source-link" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Kontingent in ChatGPT ansehen</a>
+</section>
+
+<form method="post" action="/ui/settings" class="settings-form">
+  <input type="hidden" name="revision" value="{{ preferences.revision }}">
+  <section class="card settings-card" aria-labelledby="model-heading">
+    <h2 id="model-heading">Modell &amp; Zugang</h2>
+    <div class="settings-fields">
+      <label>KI-Zugang<select name="HUGO_MODEL_PROVIDER"><option value="chatgpt"{% if s.HUGO_MODEL_PROVIDER == 'chatgpt' %} selected{% endif %}>ChatGPT-Abo</option><option value="api"{% if s.HUGO_MODEL_PROVIDER == 'api' %} selected{% endif %}>OpenAI API</option></select></label>
+      <label>Hauptmodell<input name="HUGO_MODEL" value="{{ s.HUGO_MODEL }}" required maxlength="100" spellcheck="false" autocapitalize="none"><small>Modellname des gewählten Zugangs.</small></label>
+    </div>
+    <label class="settings-toggle"><input type="checkbox" name="HUGO_API_FALLBACK_ENABLED" value="true"{% if s.HUGO_API_FALLBACK_ENABLED == 'true' %} checked{% endif %}><span>API-Reserve verwenden<small>Nach einer gemeldeten Abo-Kontingentgrenze automatisch zur kostenpflichtigen API wechseln.</small></span></label>
+    <div class="settings-fields">
+      <label>Modell für die API-Reserve<input name="HUGO_API_FALLBACK_MODEL" value="{{ s.HUGO_API_FALLBACK_MODEL }}" required maxlength="100" spellcheck="false" autocapitalize="none"></label>
+      <label>Erneuter Abo-Versuch nach (Sekunden)<input type="number" name="HUGO_CHATGPT_RETRY_SECONDS" value="{{ s.HUGO_CHATGPT_RETRY_SECONDS }}" min="60" max="86400" required><small>Wartezeit nach einem Limit; kein zugesagter Kontingent-Reset.</small></label>
+    </div>
+  </section>
+  <section class="card settings-card" aria-labelledby="work-heading">
+    <h2 id="work-heading">Recherche &amp; Gesprächskontext</h2>
+    <label class="settings-toggle"><input type="checkbox" name="HUGO_WEB_SEARCH_ENABLED" value="true"{% if s.HUGO_WEB_SEARCH_ENABLED in ['true', '1', 'yes', 'on'] %} checked{% endif %}><span>Webrecherche erlauben<small>Hugo kann aktuelle öffentliche Informationen im Chat und bei Auswertungen nachschlagen.</small></span></label>
+    <div class="settings-fields">
+      <label>Webaktionen je Agentenlauf<input type="number" name="HUGO_WEB_SEARCH_MAX_CALLS" value="{{ s.HUGO_WEB_SEARCH_MAX_CALLS }}" min="1" max="10" required></label>
+      <label>Gesprächsbudget (geschätzte Tokens)<input type="number" name="HUGO_CHAT_HISTORY_TOKENS" value="{{ s.HUGO_CHAT_HISTORY_TOKENS }}" min="2000" max="60000" required><small>Ältere Gesprächsteile werden bei Bedarf zusammengefasst.</small></label>
+    </div>
+  </section>
+  <section class="card settings-card" aria-labelledby="schedule-heading">
+    <h2 id="schedule-heading">Tägliche Auswertung</h2>
+    <p class="muted">Hugo prüft laufende Vorhaben und zeitkritische nächste Schritte. Dafür muss Hugos Hintergrunddienst laufen.</p>
+    <div class="settings-fields">
+      <label>Stunde (Europe/Berlin)<input type="number" name="SCHEDULER_HOUR" value="{{ s.SCHEDULER_HOUR }}" min="0" max="23" required></label>
+      <label>Minute<input type="number" name="SCHEDULER_MINUTE" value="{{ s.SCHEDULER_MINUTE }}" min="0" max="59" required></label>
+    </div>
+    <p class="muted">Berliner Ortszeit; Sommer- und Winterzeit werden automatisch berücksichtigt. Der laufende Hintergrunddienst übernimmt die Uhrzeit innerhalb einer Minute.</p>
+    {% if last_run %}<p>Letzte Auswertung: {{ last_run.started_at|de_datetime }} · {{ 'Geplant' if last_run.trigger_source == 'scheduled' else 'Manuell' }} · {{ {'completed': 'Abgeschlossen', 'failed': 'Fehlgeschlagen', 'running': 'Gestartet'}.get(last_run.status, last_run.status) }}</p>{% else %}<p>Noch keine Auswertung protokolliert.</p>{% endif %}
+    <p class="muted">Ob der Hintergrunddienst gerade läuft, ist hier noch nicht prüfbar.</p>
+  </section>
+  <div class="settings-save">
+    <button class="button button-primary" type="submit">Einstellungen speichern</button>
+    <p class="muted">Gilt für neue Antworten und Auswertungen. Laufende Antworten werden nicht unterbrochen.</p>
+  </div>
+</form>
+<details class="card settings-technical">
+  <summary>Serverkonfiguration</summary>
+  <p>Passwort, API-Schlüssel, Google-Zugangsdaten, Datenbank und Serveroptionen bleiben in der geschützten Umgebungskonfiguration. Änderungen dort benötigen einen Neustart.</p>
+  <p>{{ 'Die gespeicherten Einstellungen haben Vorrang vor den Servervorgaben.' if preferences.customized else 'Aktuell gelten die Servervorgaben.' }}</p>
+  {% if preferences.customized %}<form method="post" action="/ui/settings" data-confirm="Alle Einstellungen dieser Seite auf die Servervorgaben zurücksetzen? Verbindungen und Zugangsdaten bleiben erhalten.">
+    <input type="hidden" name="revision" value="{{ preferences.revision }}"><input type="hidden" name="action" value="reset">
+    <button class="button button-small" type="submit">Servervorgaben wiederherstellen</button>
+  </form>{% endif %}
+</details>
+{% endblock %}

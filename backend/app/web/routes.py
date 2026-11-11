@@ -11,6 +11,11 @@ from pathlib import Path
 from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
+from app import settings
+from app.storage.settings import SettingsConflict
+from app.agent import model_usage
+from app.version import VERSION
 
 from app.agent.evaluation import run_evaluation
 from app.calendar import client as calendar_client
@@ -94,6 +99,67 @@ def _safe_next(value: str | None) -> str:
 @router.get("/")
 def ui_home():
     return RedirectResponse("/ui/heute", status_code=303)
+
+
+# --- Einstellungen ---
+
+
+def _render_settings(request, *, error=None, notice=None, values=None, form_revision=None, status_code=200):
+    preferences = settings.current()
+    active_settings = preferences["values"]
+    if values is not None:
+        preferences["values"] = values
+        if form_revision is not None:
+            preferences["revision"] = form_revision
+    runs = list_runs(limit=1)
+    return templates.TemplateResponse(request, "settings.html", {
+        **_nav("settings", read_only=True), "preferences": preferences, "active_settings": active_settings,
+        "model_status": model_usage.public_status(),
+        "api_ready": bool(os.getenv("OPENAI_API_KEY", "").strip()),
+        "calendar_configured": calendar_client.is_configured(),
+        "calendar_connected": calendar_client.is_connected(),
+        "last_run": runs[0] if runs else None, "version": VERSION,
+        "error": error, "notice": notice,
+    }, status_code=status_code)
+
+
+@router.get("/settings")
+def settings_page(request: Request, saved: bool = False):
+    return _render_settings(request, notice="Einstellungen gespeichert." if saved else None)
+
+
+def _save_settings(request, form):
+    values = {key: value for key, value in form.items() if key not in {"revision", "action"}}
+    for key in settings.BOOLEAN_FIELDS:
+        values.setdefault(key, "false")
+    try:
+        revision = int(form.get("revision", ""))
+        if form.get("action") == "reset":
+            settings.reset(revision)
+        else:
+            settings.save(values, revision)
+    except SettingsConflict as exc:
+        # A stale form must not receive a fresh revision for a blind retry.
+        return _render_settings(request, error=str(exc), status_code=409)
+    except ValueError as exc:
+        return _render_settings(request, error=str(exc) if str(exc) else "Ungültige Einstellungen.",
+                                values=values, form_revision=form.get("revision", ""), status_code=400)
+    return RedirectResponse("/ui/settings?saved=true", status_code=303)
+
+
+@router.post("/settings")
+async def save_settings(request: Request):
+    form = await request.form()
+    return await run_in_threadpool(_save_settings, request, dict(form))
+
+
+@router.post("/settings/calendar-check")
+def check_calendar_connection(request: Request):
+    try:
+        calendars = calendar_client.list_calendars()
+    except calendar_client.CalendarError:
+        return _render_settings(request, error="Kalenderzugriff fehlgeschlagen. Bitte die Verbindung auf der Kalenderseite prüfen.", status_code=502)
+    return _render_settings(request, notice=f"Kalenderzugriff erfolgreich geprüft: {len(calendars)} Kalender erreichbar.")
 
 
 # --- Chat ---

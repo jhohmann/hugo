@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
   <title>{% block title %}Hugo{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css?v=20261111">
+  <link rel="stylesheet" href="/static/style.css?v=20261111-settings-2">
+  {% if nav_active == 'settings' %}<link rel="stylesheet" href="/static/settings.css?v=20261111-2">{% endif %}
   <link rel="icon"
       type="image/png"
       href="/static/assets/hugo-icon_sm.png">
@@ -37,9 +38,14 @@
           Kalender{% if nav_pending_calendar_actions %}<span class="badge" title="Ausstehende Kalenderaktionen">{{ nav_pending_calendar_actions }}</span>{% endif %}
         </a>
       </nav>
+      <div class="header-actions">
+      <a href="/ui/settings" class="settings-link{% if nav_active == 'settings' %} active{% endif %}" aria-label="Einstellungen" title="Einstellungen"{% if nav_active == 'settings' %} aria-current="page"{% endif %}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--surface)"/><circle cx="15" cy="17" r="3" fill="var(--surface)"/></svg>
+      </a>
       <form method="post" action="/ui/logout" class="logout-form">
         <button type="submit" class="button button-small">Abmelden</button>
       </form>
+      </div>
       {% endif %}
     </div>
   </header>
