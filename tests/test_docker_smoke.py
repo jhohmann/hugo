@@ -2,7 +2,8 @@
 import os
 import socket
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from uuid import uuid4
 
@@ -23,7 +24,7 @@ def test_docker_start_login_and_update():
     env = dict(os.environ, DB_PASSWORD="smoke-db-password", DB_USER="hugo", DB_NAME="hugo",
                OPENAI_API_KEY="sk-smoke-no-model-calls", HUGO_PASSWORD_HASH=hash_password(password),
                HUGO_COOKIE_SECURE="false", WEB_PORT=f"127.0.0.1:{port}", HUGO_IMAGE="hugo:local",
-               SCHEDULER_HOUR=str((datetime.now(timezone.utc).hour + 2) % 24), SCHEDULER_MINUTE="0")
+               SCHEDULER_HOUR=str((datetime.now(ZoneInfo("Europe/Berlin")).hour + 2) % 24), SCHEDULER_MINUTE="0")
     command = ["docker", "compose", "--env-file", ".env.prod.template", "-p", project, "-f", "compose.prod.yaml"]
 
     def compose(*args):

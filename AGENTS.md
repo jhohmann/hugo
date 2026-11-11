@@ -60,7 +60,8 @@ A successful Hugo is measured by **useful, timely interventions**, not by how mu
 This local Windows checkout is the development environment; PostgreSQL runs in Docker.
 The future target is Docker Engine on a Proxmox guest. No production deployment has
 occurred. One user and one worker; eventual work/private separation is desirable.
-No email-reading integration is wanted.
+Mail is a future integration; the settings page currently only reserves its place.
+Do not implement email access without a concrete user request.
 
 [README.md](README.md) is the authoritative technical and operational documentation:
 setup, authentication, architecture, schema, API, deployment, updates, backups,

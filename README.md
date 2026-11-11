@@ -40,7 +40,7 @@ Kalender; fehlende Informationen bleiben erkennbar.
 - Python 3.12 oder neuer
 - Docker mit Compose v2
 - Git
-- OpenAI-API-Schlüssel
+- OpenAI-API-Schlüssel oder optional eine freigeschaltete ChatGPT-Abo-Anmeldung (siehe OAuth-Einrichtung)
 
 Die virtuelle Umgebung und die Datei `.env` liegen im Projektordner. Zugangsdaten gehören weder in Git noch in Docker-Images.
 
@@ -120,7 +120,7 @@ Der Worker läuft als separater Prozess. In einem zweiten Terminal im Ordner `ba
 Unter Linux und macOS lautet der Python-Pfad `../.venv/bin/python`.
 
 - Der Worker lädt die Projekt-`.env`.
-- Standardzeit: täglich **06:00 UTC**, entsprechend 07:00 Uhr im Berliner Winter und 08:00 Uhr im Sommer.
+- Standardzeit: täglich **08:00 Uhr Europe/Berlin**, mit automatischer Sommer-/Winterzeit.
 - Ohne Worker steht die manuelle Auswertung unter **Heute → Jetzt auswerten** zur Verfügung.
 - Auswertungen verwenden die OpenAI-API und können Kosten verursachen.
 
@@ -177,6 +177,9 @@ Der Docker-Build übernimmt Anwendungscode, Migrationen und Laufzeitabhängigkei
 ## Bedienung
 
 Die Oberfläche unter `/ui` führt nach der Anmeldung zur Ansicht **Heute**. Inhaltliche Änderungen an Erinnerungen und Vorhaben erfolgen über den Chat.
+
+Das Reglersymbol rechts oben öffnet die [Einstellungen](#einstellungen-in-der-oberfläche)
+unter `/ui/settings` für Verbindungen, KI und tägliche Auswertungen.
 
 ### Chat
 
@@ -307,6 +310,44 @@ Swagger unter `/docs` verwendet die Sitzung der Browser-Anmeldung.
 
 ## Konfiguration
 
+### Einstellungen in der Oberfläche
+
+Über das Reglersymbol rechts oben oder `/ui/settings` sind Verbindungen und
+Anwendungseinstellungen zentral erreichbar, auch auf dem Smartphone:
+
+- Google Kalender: gespeicherte Anmeldung, Verbindung herstellen/verwalten und
+  ein ausdrücklich ausgelöster Zugriffstest. Ein Seitenaufruf allein kontaktiert
+  Google nicht. Mail ist als zukünftige Verbindung vorgemerkt, ohne Mail-Zugriff.
+- KI: Hugo-Version, konfiguriertes Modell, gespeicherte ChatGPT-Anmeldung,
+  Vorhandensein des API-Schlüssels, bekannte Kontingentpause sowie Modell,
+  Zeitpunkt und Tokens des letzten erfolgreichen Aufrufs über Abo oder API.
+  Zugangsdaten werden nicht ausgegeben. Gespeicherte Anmeldung und letzter
+  Erfolg sind kein aktueller Erreichbarkeitsnachweis; ein Restkontingent ist
+  derzeit nicht abrufbar. Die Seite verlinkt zur Kontingentanzeige in ChatGPT.
+- Änderbar: KI-Zugang und Hauptmodell, kostenpflichtige API-Reserve mit eigenem
+  Modell und Wartezeit, Webrecherche samt Aktionslimit, Gesprächsbudget und
+  tägliche Auswertungszeit (Europe/Berlin). Verfügbare Modellnamen hängen vom Zugang ab.
+- Die letzte Auswertung wird mit Zeitpunkt, Auslöser und Ergebnis angezeigt;
+  ein Worker-Live-Status wird mangels Heartbeat nicht behauptet.
+
+Migration `008_app_settings.sql` ergänzt eine gemeinsame, nicht geheime
+Einstellungszeile mit Revision und Änderungszeit. Zunächst gelten weiterhin
+die Umgebungswerte. Nach dem Speichern haben die Werte der Seite Vorrang für
+Web und Worker; „Servervorgaben wiederherstellen“ entfernt diese Überschreibung.
+Veraltete Formulare erhalten HTTP 409, statt neuere Änderungen zu überschreiben.
+Änderungen werden mit Revision protokolliert. Modellaufrufe und Werkzeugschleifen
+verwenden einen konsistenten Einstellungsstand bis zu ihrem Abschluss.
+
+Neue Aufrufe übernehmen Änderungen ohne Serverneustart. Ein laufender Worker
+liest die Auswertungszeit alle 60 Sekunden und plant nur bei Änderung neu;
+eine bereits vergangene neue Uhrzeit löst keine nachträgliche Auswertung aus.
+Der Worker muss separat gestartet sein. Nach Installation dieser Codeänderung
+muss ein bereits laufender Worker einmal neu gestartet werden.
+Passwort, Schlüssel, Google-OAuth-Client, Datenbank-, Cookie-, Logging- und
+Serveroptionen bleiben in der Umgebungskonfiguration und benötigen bei Änderungen
+einen Neustart. Die Seite ist durch dieselbe Anmeldung und Origin-Prüfung wie
+die übrige Anwendung geschützt.
+
 ### Datenbank
 
 | Variable | Standard / Bedeutung |
@@ -326,15 +367,133 @@ Die lokale `compose.yaml` startet nur PostgreSQL und bindet Port 5432 an `127.0.
 
 | Variable | Standard / Bedeutung |
 |---|---|
-| `OPENAI_API_KEY` | API-Schlüssel; für den normalen App-Start erforderlich |
+| `OPENAI_API_KEY` | API-Schlüssel für Modellaufrufe mit `HUGO_MODEL_PROVIDER=api` |
+| `HUGO_MODEL_PROVIDER` | `api`; alternativ `chatgpt` für das eigene ChatGPT-Abo per OAuth |
+| `HUGO_MODEL` | Bei API-Nutzung standardmäßig `gpt-5.6-terra`; bei OAuth ausdrücklich einen verfügbaren Modell-Slug wählen |
+| `HUGO_API_FALLBACK_ENABLED` | `false`; bei `true` nach einer ausdrücklich gemeldeten Abo-Kontingentgrenze kostenpflichtig über den API-Schlüssel fortsetzen |
+| `HUGO_API_FALLBACK_MODEL` | `gpt-5.6-terra`; Modell für diese API-Reserve, unabhängig vom Abo-Modell |
+| `HUGO_CHATGPT_RETRY_SECONDS` | `1800`; frühester erneuter Abo-Versuch nach erkanntem Limit, zulässig 60–86400; kein zugesagter Kontingent-Reset |
 | `HUGO_WEB_SEARCH_ENABLED` | `true`; native Webrecherche in Chat und Auswertungen, mit `false` abschalten |
 | `HUGO_WEB_SEARCH_MAX_CALLS` | `3`; höchstens 1–10 native Webaktionen je Agentenlauf |
 | `HUGO_CHAT_HISTORY_TOKENS` | `12000`; weiches Budget für den Gesprächsverlauf in geschätzten Tokens, zulässig 2000–60000 |
 | `HUGO_PASSWORD_HASH` | Mit `app.passwords` erzeugter Hash |
 | `HUGO_COOKIE_SECURE` | `true`; für lokales HTTP `false` |
 | `LOG_LEVEL` | `INFO`; Uvicorn hat zusätzlich eigene CLI-Logoptionen |
-| `SCHEDULER_HOUR` | `6`, Stunde in UTC von 0 bis 23 |
+| `SCHEDULER_HOUR` | `8`, Stunde in Europe/Berlin von 0 bis 23 |
 | `SCHEDULER_MINUTE` | `0`, Minute von 0 bis 59 |
+
+Seit 11.11.2026 beziehen sich die Scheduler-Werte auf Berliner Ortszeit statt UTC.
+Bestehende Umgebungswerte und gespeicherte Einstellungen bei Updates entsprechend
+prüfen; lokal wurden beide auf 08:00 Uhr gestellt. Docker übergibt dieselben
+Vorgaben an Web und Worker, damit Einstellungsseite und Ausführung übereinstimmen.
+
+`gpt-5-mini` wird am **11.12.2026** abgeschaltet. Der API-Standard und die
+API-Reserve verwenden deshalb den [offiziell empfohlenen Ersatz
+`gpt-5.6-terra`](https://developers.openai.com/api/docs/deprecations).
+Das Modell unterstützt Responses, Function Calling, Websuche und niedrigen
+Reasoning-Aufwand. Für Hugos mehrstufige Planung ist die Balance aus Leistung
+und Kosten der Auswahlgrund; eine allgemeine Qualitätsverbesserung ist damit
+noch nicht nachgewiesen. Standardpreise pro Million Tokens: **2 USD Eingabe /
+12 USD Ausgabe**, gegenüber zuvor 0,25 / 2 USD; die Reserve ist somit teurer
+([Modellinformationen](https://developers.openai.com/api/docs/models/gpt-5.6-terra),
+[bisheriges Modell](https://developers.openai.com/api/docs/models/gpt-5-mini)).
+Das lokal konfigurierte Abo-Hauptmodell bleibt `gpt-6.1-sol`.
+
+### ChatGPT-Abo per OAuth (optional)
+
+Der alternative Modellzugriff verwendet die offiziell dokumentierte
+[ChatGPT-Plan-Nutzung per OAuth](https://developers.openai.com/siwc/token-sharing-open-source).
+Hugo registriert sich als eigener lokaler Client; eine vorhandene Codex-Anmeldung
+wird nicht ausgelesen. Ein zusätzlicher Codex-Prozess ist dafür nicht erforderlich.
+Chat, Kontextverdichtung und geplante Auswertungen verwenden denselben gewählten
+Zugang. Datenbank, Agentenwerkzeuge und Kalenderfreigaben bleiben bei Hugo.
+
+Die Verfügbarkeit hängt vom Konto, Workspace und der Freischaltung durch OpenAI
+ab. Es entsteht kein zusätzliches Kontingent; Nutzung und App-Limits werden in
+den [ChatGPT-Nutzungseinstellungen](https://chatgpt.com/settings/usage) verwaltet.
+Modellkatalog und erfolgreiche Anmeldung allein belegen keinen funktionierenden
+Modellaufruf. Der Zugang befindet sich laut Dokumentation im Preview.
+
+Einrichtung unter Windows aus dem Projektverzeichnis, nach Installation der
+aktuellen `backend/requirements.txt`:
+
+```powershell
+.venv/Scripts/python.exe scripts/chatgpt_login.py login
+.venv/Scripts/python.exe scripts/chatgpt_login.py models
+```
+
+`login` migriert zuerst die Datenbank und zeigt dann einen Link für den lokalen
+Browser. Dort persönlich anmelden und Hugo die Nutzung des Abos erlauben. Der
+einmalige Callback läuft ausschließlich auf `127.0.0.1`; die Anmeldung verfällt
+nach zehn Minuten. Danach in `.env` `HUGO_MODEL_PROVIDER=chatgpt` und
+`HUGO_MODEL=<Slug aus dem Modellkatalog>` eintragen. Anschließend genau einen
+kleinen echten Modellaufruf prüfen und Web/Worker neu starten:
+
+```powershell
+.venv/Scripts/python.exe scripts/chatgpt_login.py check
+```
+
+`check` nutzt ausdrücklich OAuth und sendet nur eine kurze synthetische Frage;
+es verwendet keine persönlichen Vorhaben und keine Werkzeuge. Der bestehende
+API-Schlüssel wird im OAuth-Modus nur für die ausdrücklich aktivierte API-Reserve genutzt.
+Rückkehr zur API: `HUGO_MODEL_PROVIDER=api`, gegebenenfalls `HUGO_MODEL=gpt-5.6-terra`
+setzen und Prozesse neu starten.
+
+- `status` zeigt Verbindung, Abrechnungsweg, Kontingentpause und den letzten
+  abgeschlossenen Modellaufruf, ohne Zugangstokens auszugeben.
+- Mit `HUGO_API_FALLBACK_ENABLED=true` übernimmt bei
+  `subscription_sharing_usage_limit_exceeded` die kostenpflichtige API über
+  `OPENAI_API_KEY`. Der fehlgeschlagene Modellaufruf wird einmal mit dem
+  Reservemodell fortgesetzt. Teilantworten werden verworfen; bereits
+  ausgeführte lokale Werkzeugaufrufe und ihre Ergebnisse bleiben als Kontext
+  erhalten. Fremde verschlüsselte Reasoning-Daten werden beim Wechsel entfernt.
+  Normale 429-Rate-Limits, Netzwerk-, Berechtigungs- und Anmeldefehler lösen
+  keinen Wechsel der Abrechnung aus. Ein fehlender API-Schlüssel oder Fehler
+  der API-Reserve wird sichtbar gemeldet, ohne weitere Ausweichschleife.
+- Während der Kontingentpause verwenden Chat, Verdichtung und Worker die
+  aktivierte API-Reserve. Nach standardmäßig 30 Minuten versucht genau eine
+  neue Anfrage das Abo erneut; parallele Anfragen bleiben vorerst bei der API.
+  Bei Erfolg kehrt Hugo zum Abo zurück. Ohne eingehende Anfrage erfolgt kein
+  zusätzlicher Modellaufruf. `resume` erlaubt einen sofortigen neuen Versuch.
+  Ohne aktivierte Reserve erhält der Nutzer während der Pause eine Fehlermeldung.
+- Im Chat zeigt eine kompakte aufklappbare Anzeige den Zugangsstatus, die
+  kostenpflichtige Reserve, den Zeitpunkt des nächsten Abo-Versuchs und
+  Eingabe-/Ausgabetokens des letzten abgeschlossenen Modellaufrufs an.
+  Diese Tokens sind keine Restkontingent- oder Kostenberechnung. Für den
+  verwendeten direkten OAuth-Zugang ist keine verlässliche öffentliche Abfrage
+  der verbleibenden Abo-Menge dokumentiert; die Anzeige verlinkt deshalb
+  [ChatGPT → Nutzung](https://chatgpt.com/settings/usage). Ein gemeldetes Limit
+  kann nur Hugo betreffen, und der lokale Wiederholungsabstand ist keine
+  Prognose für die Rücksetzung des Limits.
+- `logout` versucht die Sitzung bei OpenAI zu widerrufen und entfernt lokale
+  Tokens. Schlägt der Widerruf fehl, wird dies angezeigt. Die registrierte
+  Client-ID und Host-ID bleiben für die erneute Anmeldung erhalten. Dieser
+  Ausbau unterstützt ein ChatGPT-Konto, keinen Kontowechsel in der UI.
+- OAuth-State, PKCE und signierte ID-Tokens mit Nonce, Issuer, Audience und
+  Ablaufzeit werden geprüft. Migration `007_model_oauth.sql` speichert die
+  Anmeldung in einer separaten Tabelle; sie wird nie als Modellkontext gelesen.
+  Wie Google-Tokens sind diese Zugangsdaten Bestandteil der geschützten
+  Datenbank und ihrer Backups. Web und Worker erneuern rotierende Tokens unter
+  derselben PostgreSQL-Sperre. Temporäre Fehler löschen die Verbindung nicht.
+
+Für Docker verwenden Web und Worker dieselbe Datenbankanmeldung und die neuen
+Umgebungsvariablen aus `.env.prod`. Für eine erstmalige Anmeldung auf einer
+eigenen VM kann das lokale Anmeldeskript über einen geschützten SSH-Tunnel zur
+VM-Datenbank arbeiten (`--env-file` mit deren Verbindungsdaten); der Browser und
+Callback bleiben lokal. Die VM verwaltet danach die Token-Erneuerung. Eine neue
+Installation benötigt eine eigene Host-ID; bestehende angemeldete Installationen
+nicht gleichzeitig als Klone betreiben. Proxmox- und unbeaufsichtigter
+OAuth-Dauerbetrieb sind noch nicht verifiziert.
+
+Die [Preview-Grenzen](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
+verlangen Streaming und `store=false`. Hugo wartet vor Werkzeugausführung auf
+eine vollständig abgeschlossene Antwort und übergibt bei Folgerunden den Kontext
+einschließlich verschlüsselter Reasoning-Inhalte. Feste `max_output_tokens` und
+`max_tool_calls` sind bei diesem Zugang nicht verfügbar: Werkzeugrunden bleiben
+begrenzt, die maximale Anzahl nativer Webaktionen wird aber erst nach einer
+Antwort geprüft. Eine Überschreitung lässt den Lauf fehlschlagen, kann bereits
+verbrauchten Modell-/Webbedarf jedoch nicht verhindern. Websuche und Modellwahl
+hängen zusätzlich von den Fähigkeiten des jeweiligen Kontos ab.
 
 ### Google Calendar
 
@@ -390,7 +549,7 @@ docker run --rm -it --entrypoint python hugo:local -m app.passwords
 In `.env.prod` eintragen:
 
 - Eigenes DB-Passwort, beispielsweise erzeugt mit `openssl rand -hex 32`
-- OpenAI-API-Schlüssel
+- OpenAI-API-Schlüssel oder eingerichtete ChatGPT-Abo-Anmeldung
 - Erzeugten Passwort-Hash
 - `HUGO_DOMAIN` für den Caddy-Proxy (siehe [Reverse-Proxy und HTTPS](#reverse-proxy-und-https))
 - Bei Bedarf Google-OAuth-Konfiguration
@@ -516,7 +675,7 @@ Eine vollständige, unversionierte Entwicklungsdatenbank kann ohne Löschen der 
 
 ## Backup und Wiederherstellung
 
-Ein PostgreSQL-Dump enthält die Anwendungsdaten einschließlich Google-Tokens, Sitzungshashes und Migrationshistorie. Sicherungen geschützt ablegen und regelmäßig eine Wiederherstellung in einer getrennten Datenbank prüfen.
+Ein PostgreSQL-Dump enthält die Anwendungsdaten einschließlich Google- und ChatGPT-OAuth-Tokens, Sitzungshashes und Migrationshistorie. Sicherungen geschützt ablegen und regelmäßig eine Wiederherstellung in einer getrennten Datenbank prüfen.
 
 Lokale Entwicklung und Docker-Betrieb haben getrennte Datenbestände. Ein Datentransfer erfolgt über Dump und Restore.
 
@@ -618,7 +777,7 @@ Hugo verwendet keine WebSockets.
 | Komponente | Technik |
 |---|---|
 | Backend | Python, FastAPI |
-| Modellzugriff | OpenAI Responses API, `gpt-5-mini` |
+| Modellzugriff | OpenAI Responses API; API-Schlüssel oder ChatGPT-Abo per OAuth, Modell konfigurierbar |
 | Datenbank | PostgreSQL 17, pgvector, psycopg |
 | Oberfläche | Jinja2, lokale CSS-/JavaScript-Dateien |
 | Scheduling | APScheduler |
@@ -637,6 +796,9 @@ Die Pfade beziehen sich auf `backend/app/`.
 | `main.py` | JSON-Endpunkte und Einbindung der Oberfläche |
 | `chat_service.py` | Gemeinsame Chatlogik für API und UI |
 | `agent/assistant.py` | Systemprompt und begrenzte Tool-Calling-Schleife |
+| `agent/model_client.py`, `agent/chatgpt_auth.py` | Wählbarer Modellzugang, Streaming, OAuth-Prüfung und Token-Erneuerung |
+| `agent/model_usage.py` | Kontingentpause, koordinierter Wiederholungsversuch und öffentliche Statusdaten ohne Zugangstokens |
+| `storage/model_oauth.py` | Gemeinsame, serialisierte OAuth-Anmeldung für Web und Worker |
 | `agent/chat_context.py` | Budgetabhängige Verdichtung älterer Gesprächsteile und vollständiger jüngster Verlauf |
 | `storage/conversation_context.py` | Gespeicherte Zusammenfassungen mit Nachrichtenmarke und Schutz vor konkurrierenden Updates |
 | `storage/thread_chats.py`, `tools/thread_references.py` | Explizite Vorhabenreferenzen, Nachrichtenverknüpfungen und Gesprächsansichten |
@@ -996,6 +1158,8 @@ keine Schreibfreigabe und verändert keine Termine.
 | `auth_sessions` | Sitzungshashes, Passwortversion und Ablauf |
 | `auth_login_limit` | Gemeinsamer Anmeldezähler |
 | `schema_version` | Migrationshistorie |
+| `model_oauth` | ChatGPT-OAuth-Registrierung, Host-ID, Tokens und Kontingentpause (geheim, kein Modellkontext) |
+| `app_settings` | Nicht geheime Anwendungseinstellungen mit Revision und Änderungszeit |
 
 ## API
 
@@ -1050,6 +1214,8 @@ Das Datum muss in der Zukunft liegen. Bei anderen Statuswerten ist
 | POST | `/ui/login`, `/ui/logout`, `/ui/chat`, `/ui/evaluate` |
 | POST | `/ui/suggestions/{id}`, `/ui/calendar-actions/{id}` |
 | POST | `/ui/kalender/disconnect` |
+| GET, POST | `/ui/settings` (anzeigen, speichern oder auf Servervorgaben zurücksetzen) |
+| POST | `/ui/settings/calendar-check` (lesender Kalenderzugriffstest) |
 | GET | `/ui/kalender/auth/start`, `/ui/kalender/auth/callback` |
 
 ### Fehler und Begrenzungen
@@ -1060,7 +1226,7 @@ Das Datum muss in der Zukunft liegen. Bei anderen Statuswerten ist
 | 401 | Fehlende API-Sitzung |
 | 403 | Ungültiger Anfrage-Ursprung |
 | 404 | Objekt nicht gefunden |
-| 409 | Kalenderkonflikt oder bereits behandelte Aktion |
+| 409 | Kalenderkonflikt, bereits behandelte Aktion oder veraltetes Einstellungsformular |
 | 429 | Anmeldelimit erreicht |
 | 502 | Externer Servicefehler |
 | 503 | Anmeldung nicht eingerichtet oder Dienst nicht verfügbar |
@@ -1070,6 +1236,20 @@ Die Oberfläche leitet bei fehlender Sitzung zur Anmeldung weiter.
 Die meisten JSON-Listen begrenzen `limit` auf 1–500. Für vollständige Datensicherungen `pg_dump` verwenden.
 
 ## Tests und Diagnose
+
+Prüfung vom 11.11.2026: Modellwechsel und täglicher Zeitplan
+
+- `tests/test_worker.py`, `tests/test_settings.py`, `tests/test_model_oauth.py`,
+  `tests/test_config.py`, `tests/test_chat_context.py` und `tests/test_web.py`:
+  **105 bestanden, 2 optionale Browsertests übersprungen**. Die Worker-Tests
+  prüfen 08:00 Uhr Berlin im Winter, Sommer und an beiden Zeitumstellungstagen.
+- `scripts/check_model_fallback.py`: echter synthetischer Werkzeugaufruf über
+  `gpt-6.1-sol` (82 Eingabe-/14 Ausgabetokens) und erfolgreiche Fortsetzung über
+  `gpt-5.6-terra` (111/5 Tokens). Keine echte Kontingentgrenze ausgelöst.
+- Lokale `.env` und gespeicherte Einstellungen sind aktualisiert. Kein separater
+  Worker lief; der angebotene Hintergrundstart wurde abgelehnt. Ein tatsächlicher
+  geplanter Lauf um 08:00 Uhr ist daher noch offen. Nächster Schritt: Worker
+  starten und die nächste geplante Auswertung beobachten. Kein Deployment geprüft.
 
 Prüfung des zeitlichen Antwortfokus: zwei gezielte Tool-Loop-Tests bestanden
 (`tests/test_web_research.py`, Auswahl `web_and_function_results_continue` und
@@ -1114,6 +1294,79 @@ Im Projektordner:
 | Docker | Gebautes Image und ausdrücklich aktivierter Smoke-Test |
 
 Datenbanktests werden ohne erreichbares PostgreSQL übersprungen. Tests nicht gegen eine produktive Datenbank ausführen.
+
+Verifikation der Einstellungsseite am 11.11.2026:
+
+- Migration `008_app_settings.sql` lokal angewendet. Echte temporäre
+  PostgreSQL-Datenbanken prüfen Speicherung, Revisionen, Zurücksetzen,
+  Migrationserhalt und parallele Migrationsläufe; keine bestehenden Daten gelöscht.
+- Gezielte Tests prüfen Formularvalidierung, Anmeldung und Origin-Schutz,
+  keine Ausgabe von Schlüsseln, Konfliktschutz gegen veraltete Formulare,
+  Laufzeitübernahme, konsistente Agenteneinstellungen und Änderung der
+  Worker-Uhrzeit ohne doppelte Auswertungsjobs. Bestehende OAuth-, Chatkontext-,
+  Web-, Agentenwerkzeug-, Recherche- und Auswertungstests ebenfalls geprüft.
+  Der explizite OAuth-Prüfbefehl bleibt auch bei gespeichertem API-Zugang beim Abo.
+- Vier Edge-Browserprüfungen bestanden: Einstellungsseite und bestehender Chat,
+  jeweils Desktop/Smartphone, einschließlich Speichern, echter Weiterleitung,
+  Neuladen, Tastaturbereich im Chat und Einstellungsseite bis 320 Pixel Breite.
+  Screenshots liegen unversioniert unter `logs/settings-*.png`; Hell- und
+  Dunkeldarstellung gesichtet. Eine anfangs zu breite mobile Navigation mit
+  Hinweiszähler ist korrigiert.
+- Keine echten Modellaufrufe oder Kalenderabfragen für diese Prüfung.
+  Verbindungsantworten waren simuliert. Ein dauerhafter Hintergrundbetrieb und
+  reale Verbindungsprüfungen bleiben separat zu beobachten; nächster Schritt
+  ist die Nutzung der Seite im Alltag und die Beobachtung geplanter Auswertungen.
+
+Verifikation der API-Reserve und Kontingentanzeige am 11.11.2026:
+
+- Die vorhandene OAuth-Anmeldung wurde bestätigt und der Modellkatalog wirklich
+  abgerufen. Lokal ist `chatgpt` mit `gpt-6.1-sol` aktiviert; auf ausdrücklichen
+  Nutzerwunsch übernimmt bei einer Kontingentgrenze die API mit `gpt-5-mini`.
+  Schlüssel und Tokens wurden nicht ausgegeben. Keine Schemaänderung nötig.
+- 134 gezielte Testfälle bestanden (OAuth, Web, Chatkontext, Agentenwerkzeuge,
+  Webrecherche), davon zuletzt 31 OAuth-/Reserve-Tests nach korrigierter
+  Testisolation. Abgedeckt sind Quotenfehler vor und während des Streams,
+  Erhalt ausgeführter Werkzeugschritte, keine Abrechnungswechsel bei anderen
+  Fehlern, fehlende Schlüssel, deaktivierte Reserve, koordinierter einzelner
+  Wiederholungsversuch in echter temporärer PostgreSQL-Datenbank und Rückkehr
+  zum Abo. Die Quotenfehler selbst werden simuliert.
+- `scripts/check_model_fallback.py` hat mit zwei echten synthetischen Aufrufen
+  die Übernahme eines Werkzeugergebnisses vom Abo in die API bestätigt:
+  `gpt-6.1-sol` 82 Eingabe-/14 Ausgabetokens, `gpt-5-mini` 108 Eingabe-/71
+  Ausgabetokens. Keine persönlichen Daten oder externen Aktionen. Ein zuvor
+  vorübergehend fehlgeschlagener Tokenabruf war beim anschließenden
+  Modellkatalogabruf wieder erfolgreich. Keine echte Kontingentgrenze erzeugt.
+- Die Anzeige zeigt bekannte Zustände und den letzten erfolgreichen Aufruf,
+  kein geschätztes Restguthaben. Nächster betrieblicher Schritt ist die
+  Beobachtung eines tatsächlichen Kontingentwechsels im Alltag; tatsächliche
+  Abo-Resetzeiten und der VM-Dauerbetrieb bleiben ungeprüft.
+- Zwei Browserprüfungen mit lokalem Edge bestanden: Desktop und Smartphone,
+  aufgeklappte Statusanzeige und verkleinerter Tastaturbereich. Die zusätzliche
+  Anzeige wird bei sehr kleiner mobiler Höhe während der Texteingabe verborgen,
+  damit das Eingabefeld erreichbar bleibt. Screenshots liegen unversioniert
+  unter `logs/model-usage-*.png`. Compose-Konfiguration validiert; Hugo lokal
+  über `app.dev` mit der neuen Konfiguration gestartet, `/health` liefert 200.
+
+Historische Verifikation des optionalen ChatGPT-OAuth-Zugangs am 10.11.2026:
+
+- 140 Testfälle in gezielten Läufen bestanden: OAuth, Migrationen, Chatkontext,
+  Agentenwerkzeuge, Auswertung, Webrecherche und Weboberfläche. Nach Anpassung
+  der Migrationsanzahl und Ergänzung der UI-Prüfung bestanden zuletzt alle
+  67 OAuth-/Migrations-/UI-Tests. Keine übersprungenen Tests und keine echten
+  Modellaufrufe. Geprüft sind signierte JWTs samt Nonce/Issuer/Audience/Ablauf,
+  ungültige Callbacks, fehlende Abo-Freigabe, echte SDK-Streamverarbeitung,
+  Werkzeugausgaben, Abbrüche, Kontingentpause und unveränderter API-Anfragepfad.
+- Echte temporäre PostgreSQL-Datenbanken belegen Migrationserhalt und genau
+  eine Token-Erneuerung bei konkurrierenden Zugriffen; der OAuth-Server ist
+  dabei simuliert. Migration `007_model_oauth.sql` ist lokal angewendet.
+- Hilfeskript und Verbindungsstatus lokal ausgeführt; noch kein ChatGPT-Konto
+  verbunden. Compose-Konfiguration mit einem temporären Prüfwert für den
+  erforderlichen Passwort-Hash validiert; kein Container neu gestartet.
+- Nächster Schritt ist die persönliche Anmeldung, anschließende Modellwahl
+  und ein kleiner echter Aufruf über `scripts/chatgpt_login.py check`. Reale
+  OAuth-Freischaltung, Modell-/Websuche-Kompatibilität, Token-Erneuerung beim
+  Anbieter und unbeaufsichtigter VM-Betrieb sind damit ausdrücklich noch
+  nicht belegt. Der bisherige API-Modus bleibt aktiviert.
 
 Verifikation der Vorhabenreferenzen am 09.11.2026:
 
@@ -1299,7 +1552,7 @@ Der Embedding-Test kann das Modell herunterladen. Das Google-Skript benötigt se
 | Chatantwort leer | Modellstatus und Tokenverbrauch prüfen |
 | Speicherplatz knapp | Daten-, Volume-, Backup- und Loggrößen prüfen |
 
-`gpt-5-mini` kann sein Ausgabelimit für Reasoning verbrauchen. Der Agent verwendet niedrigen Reasoning-Aufwand und diagnostiziert unvollständige oder leere Antworten.
+Ein Reasoning-Modell kann sein Ausgabelimit für Reasoning verbrauchen. Der Agent verwendet niedrigen Reasoning-Aufwand und diagnostiziert unvollständige oder leere Antworten.
 
 Für Docker-Diagnosen `ps -a`, Service-Logs, `/health` und eine Anmeldung prüfen. Keine Schlüssel oder Sitzungstokens protokollieren.
 
@@ -1328,7 +1581,8 @@ Fehlerberichte: [GitHub Issues](https://github.com/jhohmann/hugo/issues).
 | Aktionen | Allgemeines Freigabe- und Ausführungssystem mit nachvollziehbarem Verlauf |
 | Betrieb | HTTPS, Backup-Restore, Update-Rollback, Monitoring und Verbrauchskontrolle |
 
-Arbeits-/Privattrennung ist ein mögliches Ausbauziel. E-Mail-Lesen ist nicht vorgesehen.
+Arbeits-/Privattrennung ist ein mögliches Ausbauziel. Mail ist als zukünftige
+Verbindung vorgemerkt; Art und Umfang des Zugriffs sind noch offen.
 
 API-Kosten hängen von Nutzung, Modell und Kontext ab. Bei Modellaufrufen wird relevanter Kontext an den Anbieter übertragen.
 

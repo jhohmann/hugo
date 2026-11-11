@@ -26,6 +26,9 @@ def test_chat_scroll_and_visible_composer(mobile):
         referenced_threads=[{"id": 42, "title": "Arbeitszimmer umbauen"}],
         available_threads=[{"id": 42, "title": "Arbeitszimmer umbauen"}],
         messages=messages, draft="", error=None,
+        model_usage={"provider": "chatgpt", "connected": True, "limited": True,
+                     "fallback": True, "api_ready": True, "fallback_model": "gpt-5-mini", "retry_at": None,
+                     "last": {"route": "api", "model": "gpt-5-mini", "input_tokens": 120, "output_tokens": 20}},
     )
     from app.web import formatting as fmt
     templates.filters["de_date"] = fmt.de_date
@@ -73,6 +76,12 @@ def test_chat_scroll_and_visible_composer(mobile):
                 };
             """)
         page.goto("http://testserver/ui/chat/7")
+        page.locator(".model-usage summary").click()
+        assert page.get_by_text("Das verbleibende Abo-Kontingent ist hier nicht abrufbar.", exact=False).is_visible()
+        assert page.evaluate("document.body.scrollWidth <= innerWidth + 1")
+        Path("logs").mkdir(exist_ok=True)
+        page.screenshot(path=f"logs/model-usage-{'mobile' if mobile else 'desktop'}.png")
+        page.locator(".model-usage summary").click()
         at_end = """() => { const m = document.querySelector('#messages');
             return m.scrollHeight - m.scrollTop - m.clientHeight < 2; }"""
         page.wait_for_function(at_end)
@@ -98,6 +107,7 @@ def test_chat_scroll_and_visible_composer(mobile):
             page.evaluate("resizeKeyboard(360, 0)")
         else:
             page.set_viewport_size({"width": 1000, "height": 500})
+        page.wait_for_function("document.body.getBoundingClientRect().height <= " + ("360" if mobile else "500"))
         page.wait_for_function(at_end)
         assert page.locator("#messages").bounding_box()["height"] > 30
         composer = page.locator(".chat-form").bounding_box()

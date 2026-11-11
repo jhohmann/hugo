@@ -60,6 +60,31 @@ def test_reference_badges_picker_and_thread_chat(client, fake_storage, monkeypat
     assert client.get("/ui/threads/5?chat_page=0").status_code == 422
 
 
+def test_chatgpt_usage_indicator_and_access_errors(client, fake_storage, monkeypatch):
+    from app.agent.model_client import ModelAccessError
+    from app.agent import model_usage
+    from app import main
+    monkeypatch.setenv("HUGO_MODEL_PROVIDER", "chatgpt")
+    monkeypatch.setenv("HUGO_API_FALLBACK_ENABLED", "true")
+    monkeypatch.setattr(model_usage, "public_status", lambda: {
+        "connected": True, "limited": True, "retry_at": None,
+        "last": {"route": "api", "model": "gpt-5-mini", "input_tokens": 20, "output_tokens": 3},
+    })
+    page = client.get("/ui/chat")
+    assert "KI-Zugang: API-Reserve" in page.text
+    assert "verbleibende Abo-Kontingent ist hier nicht abrufbar" in page.text
+    assert "20 Eingabe- / 3 Ausgabetokens" in page.text
+    assert "https://chatgpt.com/settings/usage" in page.text
+    def unavailable(*_):
+        raise ModelAccessError("ChatGPT-Kontingentgrenze erreicht.")
+    monkeypatch.setattr(web_routes, "run_chat", unavailable)
+    monkeypatch.setattr(main, "run_chat", unavailable)
+    response = client.post("/ui/chat", data={"message": "Mein Entwurf"})
+    assert response.status_code == 503
+    assert "Mein Entwurf" in response.text and "Kontingentgrenze" in response.text
+    assert client.post("/chat", json={"message": "Test"}).status_code == 503
+
+
 def test_reference_selection_without_javascript_and_errors(client, fake_storage, monkeypatch):
     seen = []
     monkeypatch.setattr(web_routes, "run_chat", lambda message, cid: seen.append(message) or {"conversation_id": 7})

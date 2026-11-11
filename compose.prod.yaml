@@ -9,7 +9,14 @@ x-database-env: &database-env
 
 x-app-env: &app-env
   <<: *database-env
-  OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY fehlt}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  HUGO_MODEL_PROVIDER: ${HUGO_MODEL_PROVIDER:-api}
+  HUGO_MODEL: ${HUGO_MODEL:-}
+  SCHEDULER_HOUR: ${SCHEDULER_HOUR:-8}
+  SCHEDULER_MINUTE: ${SCHEDULER_MINUTE:-0}
+  HUGO_API_FALLBACK_ENABLED: ${HUGO_API_FALLBACK_ENABLED:-false}
+  HUGO_API_FALLBACK_MODEL: ${HUGO_API_FALLBACK_MODEL:-gpt-5.6-terra}
+  HUGO_CHATGPT_RETRY_SECONDS: ${HUGO_CHATGPT_RETRY_SECONDS:-1800}
   HUGO_WEB_SEARCH_ENABLED: ${HUGO_WEB_SEARCH_ENABLED:-true}
   HUGO_WEB_SEARCH_MAX_CALLS: ${HUGO_WEB_SEARCH_MAX_CALLS:-3}
   HUGO_CHAT_HISTORY_TOKENS: ${HUGO_CHAT_HISTORY_TOKENS:-12000}
@@ -90,8 +97,6 @@ services:
     command: ["python", "-m", "app.worker"]
     environment:
       <<: *app-env
-      SCHEDULER_HOUR: ${SCHEDULER_HOUR:-6}
-      SCHEDULER_MINUTE: ${SCHEDULER_MINUTE:-0}
     volumes:
       - model_cache:/home/hugo/.cache/huggingface
     # OpenAI, Google and initial embedding downloads need outbound Internet.
