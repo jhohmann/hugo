@@ -77,11 +77,14 @@ def health():
 @app.post("/chat")
 def chat(request: ChatRequest):
     from app.tools.thread_references import ThreadReferenceError
+    from app.agent.model_client import ModelAccessError
 
     try:
         return run_chat(request.message, request.conversation_id)
     except ThreadReferenceError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except ModelAccessError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     except ConversationNotFoundError:
         raise HTTPException(
             status_code=404,

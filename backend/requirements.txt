@@ -8,4 +8,5 @@ jinja2
 python-multipart
 python-dotenv
 httpx
+PyJWT[crypto]>=2.10,<3
 apscheduler==3.10.4

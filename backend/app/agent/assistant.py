@@ -1,9 +1,10 @@
 
 import json
 import logging
+import os
 from datetime import date, datetime, time
 
-from openai import OpenAI
+from app.agent.model_client import ModelClient
 
 from app.agent.web_research import (
     RESEARCH_INSTRUCTIONS, WEB_SEARCH_TOOL, cited_response_text, web_search_limit,
@@ -30,9 +31,9 @@ from app.tools.dates import (
 )
 
 logger = logging.getLogger(__name__)
-client = OpenAI()
+client = ModelClient()
 
-MODEL = "gpt-5-mini"
+MODEL = os.getenv("HUGO_MODEL") or "gpt-5-mini"
 
 PLANNING_INSTRUCTIONS = """
 EIGENSTÄNDIGE EINSCHÄTZUNG DER KRITIKALITÄT

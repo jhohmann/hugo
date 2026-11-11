@@ -51,6 +51,9 @@ document.addEventListener("DOMContentLoaded", function () {
       cancelAnimationFrame(viewportFrame);
       viewportFrame = requestAnimationFrame(function () {
         if (viewport && viewport.scale !== 1) return; // Pinch-Zoom nicht überschreiben.
+        document.body.classList.toggle("chat-keyboard", window.innerWidth <= 760 &&
+          (viewport ? viewport.height : window.innerHeight) < 500 &&
+          document.activeElement && document.activeElement.id === "chat-message");
         document.body.style.setProperty("--chat-height", (viewport ? viewport.height : window.innerHeight) + "px");
         document.body.style.setProperty("--chat-top", (viewport ? viewport.offsetTop : 0) + "px");
         scrollChatToEnd();
@@ -61,6 +64,8 @@ document.addEventListener("DOMContentLoaded", function () {
       viewport.addEventListener("scroll", fitChatToViewport);
     }
     window.addEventListener("resize", fitChatToViewport);
+    messages.parentElement.addEventListener("focusin", fitChatToViewport);
+    messages.parentElement.addEventListener("focusout", fitChatToViewport);
     if ("ResizeObserver" in window) {
       new ResizeObserver(scrollChatToEnd).observe(messages);
     }

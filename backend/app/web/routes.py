@@ -108,6 +108,7 @@ def _render_chat(
     error: str | None = None,
     status_code: int = 200,
 ):
+    from app.agent.model_client import usage_status
     conversations = list_conversations(limit=50)
     ids = [c["id"] for c in conversations]
     if conversation_id and conversation_id not in ids:
@@ -125,6 +126,7 @@ def _render_chat(
             "messages": messages or [],
             "draft": draft,
             "error": error,
+            "model_usage": usage_status(),
         },
         status_code=status_code,
     )
@@ -156,6 +158,7 @@ def chat_send(
     conversation_id: str = Form(""),
     thread_id: str = Form(""),
 ):
+    from app.agent.model_client import ModelAccessError
     message = message.strip()
     try:
         conv_id = int(conversation_id) if conversation_id.strip() else None
@@ -187,6 +190,10 @@ def chat_send(
         return _error_page(
             request, 404, "Diese Unterhaltung wurde nicht gefunden."
         )
+    except ModelAccessError as exc:
+        return _render_chat(request, conversation_id=conv_id,
+                            messages=get_messages(conv_id) if conv_id else [],
+                            draft=message, error=str(exc), status_code=503)
     except Exception:
         logger.exception("Chat-Antwort fehlgeschlagen")
         messages = get_messages(conv_id) if conv_id else []

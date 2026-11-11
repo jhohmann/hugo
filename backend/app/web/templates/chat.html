@@ -53,6 +53,38 @@
     </div>
 
     <form class="chat-form" method="post" action="/ui/chat" data-loading-text="Hugo denkt nach …">
+      {% if model_usage and model_usage.provider == 'chatgpt' %}
+      <details class="model-usage">
+        <summary>
+          {% if not model_usage.connected %}ChatGPT-Anmeldung fehlt
+          {% elif model_usage.limited and model_usage.fallback and model_usage.api_ready %}KI-Zugang: API-Reserve
+          {% elif model_usage.limited %}ChatGPT-Abo: Limit erreicht
+          {% else %}KI-Zugang: ChatGPT-Abo{% endif %}
+          {% if model_usage.fallback and not model_usage.limited %}<span class="muted"> · API als Reserve</span>{% endif %}
+        </summary>
+        <div>
+          {% if model_usage.limited %}
+          <p>OpenAI hat eine Kontingentgrenze gemeldet. Sie kann auch nur für Hugo gelten.
+            {% if model_usage.retry_at %}Nächster Abo-Versuch bei einer Anfrage ab {{ model_usage.retry_at|de_datetime }}. Das ist keine Zusage für eine Rücksetzung des Limits.{% endif %}
+          </p>
+          {% endif %}
+          {% if model_usage.fallback %}
+          <p>Bei einer Kontingentgrenze übernimmt die kostenpflichtige API mit {{ model_usage.fallback_model }}.
+            {% if not model_usage.api_ready %}Dafür fehlt noch der API-Schlüssel.{% endif %}</p>
+          {% else %}<p>Automatischer Wechsel zur API ist ausgeschaltet.</p>{% endif %}
+          <p>Das verbleibende Abo-Kontingent ist hier nicht abrufbar.
+            <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Kontingent in ChatGPT ansehen</a>
+          </p>
+          {% if model_usage.last.route %}
+          <p>Letzter abgeschlossener Modellaufruf: {{ 'ChatGPT-Abo' if model_usage.last.route == 'chatgpt' else 'API' }} · {{ model_usage.last.model }}.
+            {% if model_usage.last.input_tokens is not none and model_usage.last.output_tokens is not none %}
+            {{ model_usage.last.input_tokens }} Eingabe- / {{ model_usage.last.output_tokens }} Ausgabetokens.
+            {% endif %}
+          </p>
+          {% endif %}
+        </div>
+      </details>
+      {% endif %}
       {% if conversation_id %}
       <input type="hidden" name="conversation_id" value="{{ conversation_id }}">
       {% endif %}

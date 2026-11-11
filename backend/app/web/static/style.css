@@ -589,6 +589,12 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 .loading-indicator { color: var(--muted); margin: 4px 0 0; }
 
+.model-usage { width: 100%; font-size: .85rem; border: 1px solid var(--border); border-radius: 8px; }
+.model-usage > summary { padding: 7px 10px; cursor: pointer; }
+.model-usage > div { padding: 0 10px 7px; max-height: 160px; overflow-y: auto; }
+.model-usage p { margin: 6px 0; }
+.chat-keyboard .model-usage { display: none; }
+
 /* Smartphone */
 
 @media (max-width: 760px) {
