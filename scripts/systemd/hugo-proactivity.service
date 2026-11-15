@@ -1,0 +1,16 @@
+[Unit]
+Description=Hugo scheduled proactivity evaluation via local API
+After=network.target docker.service
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+LoadCredential=scheduler.curl:/etc/hugo/scheduler.curl
+ExecStart=/usr/bin/curl -q --config %d/scheduler.curl --noproxy * --silent --show-error --fail-with-body --connect-timeout 5 --max-time 1800 --request POST http://127.0.0.1:8000/internal/proactivity/evaluate
+TimeoutStartSec=1830
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+StandardOutput=journal
+StandardError=journal

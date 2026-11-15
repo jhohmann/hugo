@@ -20,6 +20,7 @@ x-app-env: &app-env
   HUGO_WEB_SEARCH_ENABLED: ${HUGO_WEB_SEARCH_ENABLED:-true}
   HUGO_WEB_SEARCH_MAX_CALLS: ${HUGO_WEB_SEARCH_MAX_CALLS:-3}
   HUGO_CHAT_HISTORY_TOKENS: ${HUGO_CHAT_HISTORY_TOKENS:-12000}
+  HUGO_SCHEDULER_TOKEN: ${HUGO_SCHEDULER_TOKEN:-}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
   GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
@@ -90,22 +91,6 @@ services:
     logging:
       driver: json-file
       options: {max-size: "50m", max-file: "5"}
-
-  worker:
-    <<: *app
-    restart: unless-stopped
-    command: ["python", "-m", "app.worker"]
-    environment:
-      <<: *app-env
-    volumes:
-      - model_cache:/home/hugo/.cache/huggingface
-    # OpenAI, Google and initial embedding downloads need outbound Internet.
-    networks: [hugo_internal, hugo_external]
-    depends_on:
-      migrate: {condition: service_completed_successfully}
-    logging:
-      driver: json-file
-      options: {max-size: "30m", max-file: "3"}
 
   caddy:
     image: caddy:2-alpine

@@ -14,7 +14,7 @@ def reserve_plan_attempt(retry_seconds):
         now = time.time()
         if registration.get("quota_retry_at", 0) > now:
             return False, None
-        # Only one web/worker request probes availability during the cooldown.
+        # Only one API request probes availability during the cooldown.
         probe = uuid4().hex
         registration.update(quota_retry_at=now + retry_seconds, quota_probe=probe)
         return True, probe

@@ -606,3 +606,12 @@ def test_api_conversations(monkeypatch, client):
     assert response.json() == {
         "conversations": [{"id": 1, "preview": "Hallo"}]
     }
+
+
+def test_evaluate_already_running(client, fake_storage, monkeypatch):
+    monkeypatch.setattr(web_routes, "run_evaluation", lambda trigger: {
+        "status": "skipped", "reason": "already_running",
+    })
+    response = client.post("/ui/evaluate")
+    assert response.status_code == 409
+    assert "Eine Auswertung läuft bereits" in response.text

@@ -12,7 +12,14 @@ bash scripts/merge-env.sh
 compose=(docker compose --env-file .env.prod -f compose.prod.yaml)
 "${compose[@]}" build web
 "${compose[@]}" up -d --wait db
-"${compose[@]}" stop web worker
+# Remove the obsolete worker on upgrade before any evaluations can overlap.
+for container in $("${compose[@]}" ps -a -q --orphans); do
+    if [[ "$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.service" }}' "$container")" == worker ]]; then
+        docker stop "$container"
+        docker rm "$container"
+    fi
+done
+"${compose[@]}" stop web
 mkdir -p backups
 chmod 700 backups
 umask 077
@@ -21,6 +28,6 @@ backup="backups/hugo-$(date -u +%Y%m%dT%H%M%SZ).dump"
 echo "Backup: $backup"
 # On failure the apps remain stopped; SQL rollback protects the failed migration.
 "${compose[@]}" run --rm --no-deps migrate
-"${compose[@]}" up -d --no-deps --wait web worker
+"${compose[@]}" up -d --no-deps --wait web
 "${compose[@]}" up -d caddy
 "${compose[@]}" ps

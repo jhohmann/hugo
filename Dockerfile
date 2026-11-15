@@ -22,5 +22,5 @@ ENV PATH=/opt/venv/bin:$PATH \
     HF_HOME=/home/hugo/.cache/huggingface
 USER hugo
 EXPOSE 8000
-# Healthchecks belong to the web service; worker/migrate don't serve HTTP.
+# Healthchecks belong to the web service; migrate doesn't serve HTTP.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

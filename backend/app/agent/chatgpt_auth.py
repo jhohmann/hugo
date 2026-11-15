@@ -157,7 +157,7 @@ def access_token():
                     clear_tokens(registration)
                 failure = exc
         token = registration.get("access_token")
-    # Raise after commit, so invalid refresh tokens are not retried by the worker.
+    # Raise after commit, so invalid refresh tokens are not retried by scheduled evaluations.
     if failure:
         raise failure
     return token

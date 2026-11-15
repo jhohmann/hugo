@@ -9,6 +9,7 @@
 #   docker compose --env-file .env.prod -f compose.prod.yaml \
 #     cp caddy:/data/caddy/pki/authorities/local/root.crt caddy-root.crt
 {$HUGO_DOMAIN} {
+	respond /internal/* 404
 	reverse_proxy web:8000
 	{$HUGO_TLS_DIRECTIVE}
 }

@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 import psycopg
 import pytest
 
-from app import settings, worker
+from app import settings
 from app.agent import model_client, model_usage
 from app.agent.chat_context import history_budget
 from app.agent.web_research import web_search_limit
@@ -55,7 +55,7 @@ def test_settings_store_persists_and_rejects_stale_updates(database, monkeypatch
     assert settings.current()["values"]["HUGO_MODEL"] == "saved-model"
     with pytest.raises(storage.SettingsConflict):
         settings.save(form_values(), 0)
-    assert worker.configured_schedule() == (15, 0)
+    assert settings.current()["values"]["SCHEDULER_HOUR"] == "15"
     settings.reset(1)
     assert real_read()["values"] == {} and real_read()["revision"] == 2
 
@@ -112,23 +112,6 @@ def test_connection_check_success_and_safe_failure(client, fake_storage, prefere
     monkeypatch.setattr(routes.calendar_client, "list_calendars", fail)
     failed = client.post("/ui/settings/calendar-check")
     assert failed.status_code == 502 and "private upstream" not in failed.text
-
-
-def test_schedule_updates_once_without_duplicate_evaluation_jobs(preferences, monkeypatch):
-    from apscheduler.schedulers.blocking import BlockingScheduler
-
-    def inspect(scheduler):
-        assert {job.id for job in scheduler.get_jobs()} == {"daily_evaluation", "settings_sync"}
-        settings.save({**form_values(), "SCHEDULER_HOUR": "9", "SCHEDULER_MINUTE": "15"}, 0)
-        worker.sync_schedule(scheduler)
-        job = scheduler.get_job("daily_evaluation")
-        assert "hour='9'" in str(job.trigger) and "minute='15'" in str(job.trigger)
-        assert str(job.trigger.timezone) == "Europe/Berlin" and job.max_instances == 1 and job.coalesce
-        unchanged = job.trigger
-        worker.sync_schedule(scheduler)
-        assert job.trigger is unchanged
-    monkeypatch.setattr(BlockingScheduler, "start", inspect)
-    worker.run_worker()
 
 
 def test_settings_require_login_and_same_origin(fake_storage, preferences, monkeypatch):

@@ -28,7 +28,7 @@ A successful Hugo is measured by **useful, timely interventions**, not by how mu
 - **Preserve uncertainty.** “Considering a trip” is not “booked a trip”; a suggested deadline is not a confirmed appointment. Never invent dates or mark speculation as decided.
 - **Be proactive, not intrusive.** Prioritize relevance, timing, confidence, and notification fatigue. No obligatory follow-up question after every reply.
 - **Favor the simplest coherent architecture.** One central agent with tools is preferred over separate overlapping agents unless evidence shows a clear need.
-- **Design for eventual unattended operation.** Proactivity requires a scheduler/worker that can evaluate time-based triggers without an incoming chat message.
+- **Design for eventual unattended operation.** Proactivity requires a scheduler that can evaluate time-based triggers without an incoming chat message.
 - **Make behavior observable.** Log tool names, outcomes, errors, and token usage appropriately, without exposing secrets. Keep important state changes auditable.
 - **Keep the user in control.** Easy inspection, correction, confirmation, and dismissal of memories, threads, and suggestions.
 
@@ -57,9 +57,11 @@ A successful Hugo is measured by **useful, timely interventions**, not by how mu
 
 ## Repository and documentation
 
-This local Windows checkout is the development environment; PostgreSQL runs in Docker.
-The future target is Docker Engine on a Proxmox guest. No production deployment has
-occurred. One user and one worker; eventual work/private separation is desirable.
+Development supports local Python and PostgreSQL in Docker. The user reports
+Docker Compose operation in a Proxmox LXC; verify changes on that target separately.
+One user and one API process; scheduled evaluations are triggered by a host systemd
+timer through a scoped authenticated endpoint. Do not reintroduce a persistent
+Python worker or duplicate model loading. Eventual work/private separation is desirable.
 Mail is a future integration; the settings page currently only reserves its place.
 Do not implement email access without a concrete user request.
 
@@ -95,7 +97,7 @@ and Docker build contexts. See README for the repository layout.
    add numbered migrations for subsequent schema changes. Never reset volumes to update.
 5. Keep local and Docker operation supported. Local entry point: python -m app.dev
    from backend; it loads the root .env and migrates before starting. Docker uses
-   a dedicated migration service before web/worker. See README for exact commands.
+   a dedicated migration service before web. See README for exact commands.
 6. Keep credentials in environment configuration, out of logs, source and images.
 7. Prefer the central model-driven tool loop. Python enforces validation,
    authorization and safe side effects. Do not restore the obsolete memory-agent pipeline.
@@ -118,6 +120,7 @@ and Docker build contexts. See README for the repository layout.
 Password-only login and persistent sessions work locally, confirmed by the user.
 The current cleanup consolidates schema and documentation and prepares the shared
 local/Docker startup and update path. Verification results are recorded in README.
-Next operational milestone: first deployment on Proxmox, including HTTPS, a real
-backup/restore exercise and observation of scheduled evaluations. Deployment and
+Next operational milestone: verify the host systemd timer on Proxmox, measure
+PSS before/after removing the worker, exercise backup/restore and observe scheduled
+evaluations. Keep the common PostgreSQL evaluation lock across every entry point. Deployment and
 external calendar/model behavior must not be claimed tested by mocked unit tests.

@@ -1,6 +1,7 @@
 """Passwort-Anmeldung und gemeinsame Zugriffsschranke für UI und API."""
 
 import logging
+import secrets
 import os
 from pathlib import Path
 from urllib.parse import quote, urlsplit
@@ -65,6 +66,15 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         async def guarded():
+            # This credential grants only scheduled evaluation, never general API access.
+            if path == "/internal/proactivity/evaluate":
+                expected = os.getenv("HUGO_SCHEDULER_TOKEN", "")
+                supplied = request.headers.get("authorization", "")
+                if len(expected) < 32:
+                    return JSONResponse({"detail": "Scheduler-Zugang nicht eingerichtet."}, status_code=503)
+                if not secrets.compare_digest(supplied.encode(), ("Bearer " + expected).encode()):
+                    return JSONResponse({"detail": "Scheduler-Anmeldung erforderlich."}, status_code=401)
+                return await call_next(request)
             configured_hash = password_hash()
             if not configured_hash:
                 if path == "/ui/login" and request.method == "GET":

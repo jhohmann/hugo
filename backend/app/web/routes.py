@@ -340,7 +340,9 @@ def suggestion_action(
 def evaluate(request: Request):
     """Manueller Evaluationslauf, wie POST /proactivity/evaluate."""
     try:
-        run_evaluation(trigger="manual")
+        result = run_evaluation(trigger="manual")
+        if result.get("reason") == "already_running":
+            return _error_page(request, 409, "Eine Auswertung läuft bereits. Bitte später erneut prüfen.")
     except Exception:
         logger.exception("Evaluationslauf fehlgeschlagen")
         return _error_page(

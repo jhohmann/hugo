@@ -9,6 +9,8 @@ entscheidet, was Aufmerksamkeit verdient.
 import json
 import logging
 
+from app.storage.evaluation import evaluation_lock, scheduled_due
+
 from app.agent.assistant import PLANNING_INSTRUCTIONS, TOOLS, run_tool_loop
 from app.storage.memory_search import list_memories
 from app.storage.suggestions import (
@@ -182,7 +184,21 @@ def build_evaluation_instructions() -> str:
     )
 
 
-def run_evaluation(trigger: str = "manual") -> dict:
+def run_evaluation(trigger: str = "manual", *, only_if_due: bool = False) -> dict:
+    """Serialize every entry point, including UI and scheduled HTTP calls."""
+    with evaluation_lock() as conn:
+        if conn is None:
+            logger.info("Evaluation skipped: another evaluation is running")
+            return {"status": "skipped", "reason": "already_running"}
+        if only_if_due and not scheduled_due(conn):
+            return {"status": "skipped", "reason": "not_due"}
+        result = _run_evaluation(trigger)
+        logger.info("Evaluation completed: run_id=%s suggestions_created=%s",
+                    result["run_id"], result["suggestions_created"])
+        return result
+
+
+def _run_evaluation(trigger: str = "manual") -> dict:
     """Ein Evaluationslauf über den aktuellen Bestand.
 
     Nachvollziehbar über einen Eintrag in evaluation_runs;

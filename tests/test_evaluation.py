@@ -68,7 +68,7 @@ def test_leerer_bestand_erzeugt_keine_vorschlaege(
 
     monkeypatch.setattr(evaluation, "run_tool_loop", fake_loop)
 
-    result = evaluation.run_evaluation()
+    result = evaluation._run_evaluation()
 
     assert result["status"] == "completed"
     assert result["threads_considered"] == 0
@@ -112,7 +112,7 @@ def test_bestand_und_run_id_werden_uebergeben(
 
     monkeypatch.setattr(evaluation, "run_tool_loop", fake_loop)
 
-    result = evaluation.run_evaluation()
+    result = evaluation._run_evaluation()
 
     assert result["threads_considered"] == 1
     assert captured["run_id"] == 1
@@ -143,7 +143,7 @@ def test_scheduled_evaluation_keeps_paused_plans_as_context(fake_storage, monkey
 
     monkeypatch.setattr(evaluation, "list_threads", read_threads)
     monkeypatch.setattr(evaluation, "run_tool_loop", model_loop)
-    result = evaluation.run_evaluation(trigger="scheduled")
+    result = evaluation._run_evaluation(trigger="scheduled")
     assert result["threads_considered"] == 2
     assert fake_storage["create_run"] == ["scheduled"]
 
@@ -157,7 +157,7 @@ def test_fehler_markiert_lauf_als_failed(
     monkeypatch.setattr(evaluation, "run_tool_loop", boom)
 
     with pytest.raises(RuntimeError, match="OpenAI"):
-        evaluation.run_evaluation()
+        evaluation._run_evaluation()
 
     assert fake_storage["finish_run"][0]["status"] == "failed"
     assert "OpenAI nicht erreichbar" in (

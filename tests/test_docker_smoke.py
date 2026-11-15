@@ -42,15 +42,15 @@ def test_docker_start_login_and_update():
             assert response.status_code == 303
             assert "Max-Age=" in response.headers["set-cookie"]
             assert client.get("/ui/chat").status_code == 200
-            compose("exec", "-T", "worker", "python", "-c",
+            compose("exec", "-T", "web", "python", "-c",
                     "from pathlib import Path; import urllib.request; "
                     "Path('/home/hugo/.cache/huggingface/smoke').touch(); "
                     "urllib.request.urlopen('https://example.com', timeout=20)")
-            compose("stop", "web", "worker")
+            compose("stop", "web")
             compose("run", "--rm", "--no-deps", "migrate")
-            compose("up", "-d", "--no-deps", "--force-recreate", "--wait", "web", "worker")
+            compose("up", "-d", "--no-deps", "--force-recreate", "--wait", "web")
             assert client.get("/ui/chat").status_code == 200
-            assert "Scheduler started" in compose("logs", "worker")
+            assert "worker" not in compose("ps", "--services")
     finally:
         # Only resources belonging to this randomly named test project are removed.
         compose("down", "--volumes", "--remove-orphans")

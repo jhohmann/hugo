@@ -12,7 +12,7 @@ Kalender; fehlende Informationen bleiben erkennbar.
 - **Sprache:** Deutsch
 - **Zeitzone:** Europe/Berlin
 - **Entwicklung:** Python lokal, PostgreSQL in Docker
-- **Betrieb:** Webserver und Worker auf einer Docker Engine, beispielsweise in einem Proxmox-Gast
+- **Betrieb:** Webserver auf Docker Engine, systemd-Timer auf dem Docker-Host, beispielsweise in einem Proxmox-Gast
 - **Zugriff:** Ein Nutzer mit Passwortanmeldung
 
 [AGENTS.md](AGENTS.md) beschreibt die Produktziele und Arbeitsregeln für Entwicklungsagenten.
@@ -109,20 +109,14 @@ API-Schlüssel, Passwort-Hash und lokale Konfiguration in `.env` eintragen. Ansc
 ../.venv/bin/python -m app.dev
 ```
 
-### Worker
+### Geplante Auswertung
 
-Der Worker läuft als separater Prozess. In einem zweiten Terminal im Ordner `backend` starten:
-
-```powershell
-..\.venv\Scripts\python.exe -m app.worker
-```
-
-Unter Linux und macOS lautet der Python-Pfad `../.venv/bin/python`.
-
-- Der Worker lädt die Projekt-`.env`.
-- Standardzeit: täglich **08:00 Uhr Europe/Berlin**, mit automatischer Sommer-/Winterzeit.
-- Ohne Worker steht die manuelle Auswertung unter **Heute → Jetzt auswerten** zur Verfügung.
-- Auswertungen verwenden die OpenAI-API und können Kosten verursachen.
+Die API führt manuelle und geplante Auswertungen aus. Es gibt keinen separaten
+Python-Worker mehr. Für unbeaufsichtigten Linux-/Docker-Betrieb den
+[systemd-Timer installieren](#systemd-timer-auf-dem-docker-host).
+Ohne Timer bleibt **Heute → Jetzt auswerten** verfügbar. Auswertungen können
+Modellkosten verursachen. Für lokale Windows-/macOS-Entwicklung ist kein
+automatischer Scheduler enthalten.
 
 ### Einzelne Einstiegspunkte
 
@@ -153,7 +147,7 @@ tests/                  Automatisierte Tests
 scripts/                Updates und manuelle Diagnose
 pyproject.toml          Testkonfiguration
 compose.yaml            Lokale Entwicklungsdatenbank
-compose.prod.yaml       Docker-Stack mit Datenbank, Migration, Web, Worker und Caddy
+compose.prod.yaml       Docker-Stack mit Datenbank, Migration, Web und Caddy
 Caddyfile               Reverse-Proxy-Konfiguration (Domain aus HUGO_DOMAIN)
 Dockerfile              Gemeinsames Anwendungsimage
 ```
@@ -328,21 +322,20 @@ Anwendungseinstellungen zentral erreichbar, auch auf dem Smartphone:
   Modell und Wartezeit, Webrecherche samt Aktionslimit, Gesprächsbudget und
   tägliche Auswertungszeit (Europe/Berlin). Verfügbare Modellnamen hängen vom Zugang ab.
 - Die letzte Auswertung wird mit Zeitpunkt, Auslöser und Ergebnis angezeigt;
-  ein Worker-Live-Status wird mangels Heartbeat nicht behauptet.
+  ein Timer-Live-Status wird mangels Heartbeat nicht behauptet.
 
 Migration `008_app_settings.sql` ergänzt eine gemeinsame, nicht geheime
 Einstellungszeile mit Revision und Änderungszeit. Zunächst gelten weiterhin
 die Umgebungswerte. Nach dem Speichern haben die Werte der Seite Vorrang für
-Web und Worker; „Servervorgaben wiederherstellen“ entfernt diese Überschreibung.
+Web; „Servervorgaben wiederherstellen“ entfernt diese Überschreibung.
 Veraltete Formulare erhalten HTTP 409, statt neuere Änderungen zu überschreiben.
 Änderungen werden mit Revision protokolliert. Modellaufrufe und Werkzeugschleifen
 verwenden einen konsistenten Einstellungsstand bis zu ihrem Abschluss.
 
-Neue Aufrufe übernehmen Änderungen ohne Serverneustart. Ein laufender Worker
-liest die Auswertungszeit alle 60 Sekunden und plant nur bei Änderung neu;
-eine bereits vergangene neue Uhrzeit löst keine nachträgliche Auswertung aus.
-Der Worker muss separat gestartet sein. Nach Installation dieser Codeänderung
-muss ein bereits laufender Worker einmal neu gestartet werden.
+Neue Aufrufe übernehmen Änderungen ohne Serverneustart. Der systemd-Timer
+prüft die Auswertungszeit standardmäßig minütlich. Nach der eingestellten
+Uhrzeit wird beim nächsten Aufruf einmal für den aktuellen Berliner Tag
+ausgewertet; vergangene Tage werden nicht nachgeholt.
 Passwort, Schlüssel, Google-OAuth-Client, Datenbank-, Cookie-, Logging- und
 Serveroptionen bleiben in der Umgebungskonfiguration und benötigen bei Änderungen
 einen Neustart. Die Seite ist durch dieselbe Anmeldung und Origin-Prüfung wie
@@ -385,7 +378,7 @@ Die lokale `compose.yaml` startet nur PostgreSQL und bindet Port 5432 an `127.0.
 Seit 11.11.2026 beziehen sich die Scheduler-Werte auf Berliner Ortszeit statt UTC.
 Bestehende Umgebungswerte und gespeicherte Einstellungen bei Updates entsprechend
 prüfen; lokal wurden beide auf 08:00 Uhr gestellt. Docker übergibt dieselben
-Vorgaben an Web und Worker, damit Einstellungsseite und Ausführung übereinstimmen.
+Vorgaben an Web, damit Einstellungsseite und Ausführung übereinstimmen.
 
 `gpt-5-mini` wird am **11.12.2026** abgeschaltet. Der API-Standard und die
 API-Reserve verwenden deshalb den [offiziell empfohlenen Ersatz
@@ -427,7 +420,7 @@ Browser. Dort persönlich anmelden und Hugo die Nutzung des Abos erlauben. Der
 einmalige Callback läuft ausschließlich auf `127.0.0.1`; die Anmeldung verfällt
 nach zehn Minuten. Danach in `.env` `HUGO_MODEL_PROVIDER=chatgpt` und
 `HUGO_MODEL=<Slug aus dem Modellkatalog>` eintragen. Anschließend genau einen
-kleinen echten Modellaufruf prüfen und Web/Worker neu starten:
+kleinen echten Modellaufruf prüfen und Web neu starten:
 
 ```powershell
 .venv/Scripts/python.exe scripts/chatgpt_login.py check
@@ -450,7 +443,7 @@ setzen und Prozesse neu starten.
   Normale 429-Rate-Limits, Netzwerk-, Berechtigungs- und Anmeldefehler lösen
   keinen Wechsel der Abrechnung aus. Ein fehlender API-Schlüssel oder Fehler
   der API-Reserve wird sichtbar gemeldet, ohne weitere Ausweichschleife.
-- Während der Kontingentpause verwenden Chat, Verdichtung und Worker die
+- Während der Kontingentpause verwenden Chat, Verdichtung und Auswertung die
   aktivierte API-Reserve. Nach standardmäßig 30 Minuten versucht genau eine
   neue Anfrage das Abo erneut; parallele Anfragen bleiben vorerst bei der API.
   Bei Erfolg kehrt Hugo zum Abo zurück. Ohne eingehende Anfrage erfolgt kein
@@ -473,10 +466,10 @@ setzen und Prozesse neu starten.
   Ablaufzeit werden geprüft. Migration `007_model_oauth.sql` speichert die
   Anmeldung in einer separaten Tabelle; sie wird nie als Modellkontext gelesen.
   Wie Google-Tokens sind diese Zugangsdaten Bestandteil der geschützten
-  Datenbank und ihrer Backups. Web und Worker erneuern rotierende Tokens unter
+  Datenbank und ihrer Backups. Web erneuern rotierende Tokens unter
   derselben PostgreSQL-Sperre. Temporäre Fehler löschen die Verbindung nicht.
 
-Für Docker verwenden Web und Worker dieselbe Datenbankanmeldung und die neuen
+Für Docker verwenden Web dieselbe Datenbankanmeldung und die neuen
 Umgebungsvariablen aus `.env.prod`. Für eine erstmalige Anmeldung auf einer
 eigenen VM kann das lokale Anmeldeskript über einen geschützten SSH-Tunnel zur
 VM-Datenbank arbeiten (`--env-file` mit deren Verbindungsdaten); der Browser und
@@ -516,7 +509,7 @@ Für den externen Betrieb die entsprechende HTTPS-Adresse verwenden. Ohne OAuth-
 | Variable | Standard / Bedeutung |
 |---|---|
 | `WEB_PORT` | `127.0.0.1:8000`; Format `[BIND_ADRESSE:]PORT` |
-| `HUGO_IMAGE` | `hugo:local`; gemeinsames Image für Web, Worker und Migration |
+| `HUGO_IMAGE` | `hugo:local`; gemeinsames Image für Web und Migration |
 | `HUGO_DOMAIN` | Öffentlicher Name für den Caddy-Proxy, erforderlich |
 | `HUGO_TLS_INTERNAL` | `true` für lokale Namen ohne öffentliche Auflösung (Caddy-interne CA) |
 | `HTTP_PORT` / `HTTPS_PORT` | Veröffentlichte Proxy-Ports, Standard `80`/`443` |
@@ -561,11 +554,99 @@ Bei späteren Updates ergänzt [`scripts/merge-env.sh`](scripts/merge-env.sh) ne
 ```bash
 docker compose --env-file .env.prod -f compose.prod.yaml up -d --build
 docker compose --env-file .env.prod -f compose.prod.yaml ps -a
-docker compose --env-file .env.prod -f compose.prod.yaml logs migrate web worker
+docker compose --env-file .env.prod -f compose.prod.yaml logs migrate web
 curl --fail http://127.0.0.1:8000/health
 ```
 
 `compose.prod.yaml` ist eigenständig und wird nicht mit `compose.yaml` kombiniert.
+
+### systemd-Timer auf dem Docker-Host
+
+Die Dateien unter [`scripts/systemd`](scripts/systemd) laufen **im LXC mit Docker**,
+nicht auf dem übergeordneten Proxmox-Knoten. Benötigt werden systemd mit
+`LoadCredential` (ab Version 247) und curl mit `--fail-with-body` (ab 7.76).
+Es werden keine zusätzlichen Python-Abhängigkeiten benötigt.
+
+1. Mit `openssl rand -hex 32` ein Token erzeugen. Als `HUGO_SCHEDULER_TOKEN`
+   in `.env.prod` eintragen (mindestens 32 Zeichen), dann `web` neu erstellen.
+2. Auf dem Docker-Host `sudo install -d -m 700 /etc/hugo` und
+   `sudo install -m 600 /dev/null /etc/hugo/scheduler.curl` ausführen.
+   Mit `sudoedit /etc/hugo/scheduler.curl` genau eine Zeile eintragen:
+   `header = "Authorization: Bearer HIER_DASSELBE_TOKEN"`.
+   Keine Secrets in Befehlsargumente, Git oder Logs schreiben.
+3. Units installieren und aktivieren:
+
+```bash
+sudo install -m 644 scripts/systemd/hugo-proactivity.service scripts/systemd/hugo-proactivity.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now hugo-proactivity.timer
+sudo systemctl start hugo-proactivity.service
+systemctl list-timers hugo-proactivity.timer
+journalctl -u hugo-proactivity.service --since today
+```
+
+Die Service-Datei ruft direkt `http://127.0.0.1:8000/internal/proactivity/evaluate`
+auf. `WEB_PORT` muss dafür lokal erreichbar bleiben; bei anderem Port die URL
+über `sudo systemctl edit hugo-proactivity.service` anpassen (`ExecStart=` leeren
+und die vollständige Zeile mit geändertem Port neu setzen). Caddy blockiert
+`/internal/*` mit 404. Der direkte API-Port sollte ausschließlich an Loopback
+gebunden sein. Das separate Bearer-Token erlaubt nur diesen Endpunkt, keinen
+Chat-, Kalender- oder sonstigen API-Zugriff. Fehlendes/zu kurzes konfiguriertes
+Token ergibt 503, falsches Token 401. Der bisherige
+`POST /proactivity/evaluate` bleibt eine manuelle Auswertung mit Sitzung und
+Origin-Prüfung; er eignet sich deshalb nicht direkt als geplanter Aufruf.
+
+Standardmäßig prüft der Timer jede Minute; das **Prüfintervall** lässt sich mit
+`sudo systemctl edit hugo-proactivity.timer` ändern, beispielsweise:
+
+```ini
+[Timer]
+OnCalendar=
+OnCalendar=*-*-* *:0/5:00
+```
+
+Danach `sudo systemctl daemon-reload` und
+`sudo systemctl restart hugo-proactivity.timer`. Die **tägliche Auswertungszeit**
+bleibt in der Oberfläche beziehungsweise über `SCHEDULER_HOUR`/`SCHEDULER_MINUTE`
+konfiguriert (Standard 08:00 Europe/Berlin, automatische Sommer-/Winterzeit).
+Ein aktivierter Timer startet nach dem Booten; `Persistent=true` holt einen
+verpassten Timeraufruf nach. Die API wertet dann höchstens den aktuellen Tag aus.
+Bei nicht erreichbarer API/Datenbank scheitert curl sichtbar; der nächste Tick
+versucht erneut. Kein eigener laufender Scheduler-Prozess und kein Modellimport
+auf dem Host. systemd startet einen bereits laufenden Oneshot-Service nicht erneut
+([systemd-Dokumentation](https://www.freedesktop.org/software/systemd/man/latest/systemd.timer.html)).
+
+Jeder Auswertungsweg (UI, manuelle API, Scheduler) nimmt denselben nicht wartenden
+PostgreSQL-Session-Advisory-Lock. Bei belegter Sperre liefert die API
+`{"status":"skipped","reason":"already_running"}`; ohne Fälligkeit
+`{"status":"skipped","reason":"not_due"}` (jeweils HTTP 200). Die dedizierte
+DB-Verbindung hält keine offene Transaktion während der Modellaufrufe und gibt
+die Sperre beim Schließen/Prozessende frei. Die tägliche Fälligkeitsprüfung und
+der Start des Laufs liegen innerhalb derselben Sperre. Bereits gestartete
+geplante Versuche zählen auch bei Fehler oder Absturz für diesen Tag; keine
+minütlichen kostenpflichtigen Wiederholungen. Ein fehlgeschlagener Lauf ist in
+`evaluation_runs` sichtbar und kann manuell erneut ausgelöst werden. Ein durch
+Prozessabbruch verbliebener `running`-Eintrag ist historisch und hält keine Sperre.
+
+Modellfehler ergeben am Scheduler-Endpunkt HTTP 502; DB-Ausfälle können 503
+ergeben. curl protokolliert Antwort und Fehler im Journal und liefert bei HTTP-
+oder Transportfehlern einen Fehlerstatus. Es gibt keine automatischen HTTP-Retries.
+Verbindungsaufbau ist auf 5 Sekunden, der gesamte HTTP-Aufruf auf 1800 Sekunden
+begrenzt; systemd beendet den Client spätestens nach 1830 Sekunden
+([curl-Dokumentation](https://curl.se/docs/manpage.html)). Ein Client-Timeout
+bricht einen schon laufenden synchronen API-Lauf **nicht** ab. Dessen DB-Sperre
+bleibt bis zum tatsächlichen Ende erhalten; ein weiterer Tick startet keinen
+zweiten Lauf. Das ist kein serverseitiges Gesamtlaufzeitlimit.
+
+**Umstieg vom Worker:** Vor dem ersten Timerlauf den alten Worker stoppen und
+entfernen, da alter Code den neuen Lock nicht kennt. `scripts/update.sh` erledigt
+dies für den bisherigen Compose-Service. Bei manuellen Updates einmal mit dem
+bisherigen Compose-Stand `stop worker` und `rm -f worker` ausführen; alternativ
+nach der Konfigurationsänderung `up -d --build --remove-orphans` im ausschließlich
+für Hugo verwendeten Compose-Projekt. Volumes nicht entfernen. Anschließend Token,
+Timerinstallation und Journal prüfen. Bei Wartung oder Wiederherstellung den Timer
+mit `sudo systemctl stop hugo-proactivity.timer hugo-proactivity.service` stoppen
+und danach wieder starten. Das Update-Skript installiert/aktiviert keine Host-Units.
 
 ### Services
 
@@ -574,7 +655,6 @@ curl --fail http://127.0.0.1:8000/health
 | `db` | PostgreSQL 17 mit pgvector | Keine |
 | `migrate` | Einmaliger Schemalauf | Datenbank gesund |
 | `web` | FastAPI/Uvicorn | Migration erfolgreich |
-| `worker` | Tägliche Auswertung | Migration erfolgreich |
 | `caddy` | Reverse-Proxy mit TLS | Web gesund |
 
 Der Migrationscontainer beendet sich bei Erfolg mit Exitcode 0. Die Datenbank hat keinen veröffentlichten Port; der Webserver bindet standardmäßig an Loopback. Caddy veröffentlicht die Ports 80 und 443 und leitet an `web:8000` weiter.
@@ -584,7 +664,7 @@ Der Migrationscontainer beendet sich bei Erfolg mit Exitcode 0. Die Datenbank ha
 - `hugo_postgres_data` enthält die Datenbank.
 - `model_cache` hält die heruntergeladenen Modelle.
 - `caddy_data` und `caddy_config` enthalten Zertifikate und Laufzeitdaten des Proxys.
-- Web, Worker und Caddy verwenden ein internes DB-Netz und ein zusätzliches Netz für ausgehende Verbindungen.
+- Web und Caddy verwenden ein internes DB-Netz und ein zusätzliches Netz für ausgehende Verbindungen.
 - Das Image verwendet Python 3.12, CPU-PyTorch und den Nutzer `hugo` ohne Root-Rechte.
 - Eine GPU ist nicht erforderlich.
 
@@ -596,22 +676,21 @@ Compose-Volumes gehören zum jeweiligen Projektnamen. Ein anderer Projektname ve
 |---|---|---|
 | Datenbank | Alle 5 Sekunden | 10 MB × 3 |
 | Web | Alle 30 Sekunden, 90 Sekunden Startfrist | 50 MB × 5 |
-| Worker | Kein HTTP-Healthcheck | 30 MB × 3 |
 | Caddy | Admin-API alle 30 Sekunden | 10 MB × 3 |
 
 `/health` prüft den Webprozess, nicht die Datenbank oder Anmeldung. `restart: unless-stopped` startet beendete Prozesse neu; ein Status `unhealthy` allein löst keinen Neustart aus.
 
 ```bash
 docker compose --env-file .env.prod -f compose.prod.yaml logs -f web
-docker compose --env-file .env.prod -f compose.prod.yaml logs --since 24h worker
-docker compose --env-file .env.prod -f compose.prod.yaml stop web worker
+journalctl -u hugo-proactivity.service --since "24 hours ago"
+docker compose --env-file .env.prod -f compose.prod.yaml stop web
 ```
 
 `restart` übernimmt weder neue Images noch geänderte Umgebungsvariablen. Dafür `up -d` verwenden. `down` ohne `--volumes` erhält benannte Volumes.
 
 ## Updates und Migrationen
 
-Ein Update umfasst Code, Abhängigkeiten, Datenbankschema und Prozessneustart. Vor Schemaänderungen die Datenbank sichern und Web sowie Worker stoppen.
+Ein Update umfasst Code, Abhängigkeiten, Datenbankschema und Prozessneustart. Vor Schemaänderungen die Datenbank sichern und Web stoppen.
 
 ### Lokale Entwicklung
 
@@ -631,7 +710,7 @@ cd backend
 ..\.venv\Scripts\python.exe -m app.dev
 ```
 
-Einen separat verwendeten Worker anschließend neu starten. Unter Linux und macOS den Python-Pfad `.venv/bin/python` verwenden und bei Fehlern abbrechen.
+Unter Linux und macOS den Python-Pfad `.venv/bin/python` verwenden und bei Fehlern abbrechen.
 
 ### Docker-Host
 
@@ -644,12 +723,12 @@ Das [Update-Skript](scripts/update.sh) benötigt eine saubere getrackte Arbeitsk
 1. Code mit `git pull --ff-only` aktualisieren.
 2. Gemeinsames Image bauen.
 3. Datenbankbereitschaft prüfen.
-4. Web und Worker stoppen.
+4. Web stoppen.
 5. Datenbank nach `backups/` sichern.
 6. Migrationen ausführen.
-7. Web und Worker mit dem neuen Image starten.
+7. Web mit dem neuen Image starten.
 
-Bei Build-Fehlern läuft die Anwendung weiter. Nach einem Migrationsfehler bleiben Web und Worker gestoppt. Ein automatischer Daten-Rollback erfolgt nicht.
+Bei Build-Fehlern läuft die Anwendung weiter. Nach einem Migrationsfehler bleiben Web gestoppt. Ein automatischer Daten-Rollback erfolgt nicht.
 
 ### Migrationsdateien
 
@@ -732,7 +811,7 @@ Für die lokale Entwicklung `docker compose` ohne Produktionsdatei verwenden. Un
 Vor dem Umschalten:
 
 1. Code-Stand, Schema-Version und Daten prüfen.
-2. Web und Worker stoppen.
+2. Web stoppen.
 3. Verbindung auf die wiederhergestellte Datenbank umstellen.
 4. Die ursprüngliche Datenbank bis zur erfolgreichen Prüfung behalten.
 
@@ -780,12 +859,12 @@ Hugo verwendet keine WebSockets.
 | Modellzugriff | OpenAI Responses API; API-Schlüssel oder ChatGPT-Abo per OAuth, Modell konfigurierbar |
 | Datenbank | PostgreSQL 17, pgvector, psycopg |
 | Oberfläche | Jinja2, lokale CSS-/JavaScript-Dateien |
-| Scheduling | APScheduler |
+| Scheduling | systemd-Timer auf dem Docker-Host, kurzlebiger curl-Aufruf |
 | Embeddings | `intfloat/multilingual-e5-small`, 384 Dimensionen |
 
 Embeddings sind normalisiert und verwenden `query:`-/`passage:`-Präfixe. Die Suche nutzt HNSW-Indizes mit Cosinus-Abstand.
 
-Das Modell wird bei Bedarf geladen und pro Prozess gehalten. Der Docker-Modellcache vermeidet wiederholte Downloads; Web und Worker benötigen jeweils eigenen Arbeitsspeicher.
+Das Modell wird bei Bedarf geladen und pro Prozess gehalten. Der Docker-Modellcache vermeidet wiederholte Downloads; nur die API hält das Modell im Arbeitsspeicher.
 
 ### Zentrale Module
 
@@ -798,7 +877,7 @@ Die Pfade beziehen sich auf `backend/app/`.
 | `agent/assistant.py` | Systemprompt und begrenzte Tool-Calling-Schleife |
 | `agent/model_client.py`, `agent/chatgpt_auth.py` | Wählbarer Modellzugang, Streaming, OAuth-Prüfung und Token-Erneuerung |
 | `agent/model_usage.py` | Kontingentpause, koordinierter Wiederholungsversuch und öffentliche Statusdaten ohne Zugangstokens |
-| `storage/model_oauth.py` | Gemeinsame, serialisierte OAuth-Anmeldung für Web und Worker |
+| `storage/model_oauth.py` | Gemeinsame, serialisierte OAuth-Anmeldung für Web |
 | `agent/chat_context.py` | Budgetabhängige Verdichtung älterer Gesprächsteile und vollständiger jüngster Verlauf |
 | `storage/conversation_context.py` | Gespeicherte Zusammenfassungen mit Nachrichtenmarke und Schutz vor konkurrierenden Updates |
 | `storage/thread_chats.py`, `tools/thread_references.py` | Explizite Vorhabenreferenzen, Nachrichtenverknüpfungen und Gesprächsansichten |
@@ -812,7 +891,7 @@ Die Pfade beziehen sich auf `backend/app/`.
 | `auth.py`, `passwords.py` | Zugriffsschutz, Anmeldung und Passwort-Hash |
 | `config.py`, `dev.py` | Konfiguration und lokaler Start |
 | `migrate.py` | Versionierte Schemaänderungen |
-| `worker.py` | Geplante Auswertungen |
+| `storage/evaluation.py` | Globale Laufsperre und tägliche Fälligkeitsprüfung |
 
 UI und JSON-API verwenden dieselben Fach- und Speicherfunktionen.
 
@@ -846,7 +925,7 @@ Beispiel: „Wann findet die nächste Red Bull Romaniacs statt?“
   Reasoning, proaktive Auswertungen weiterhin 3.000. Das ist kein Euro-Kostenlimit.
 - Websuche und das zusätzliche Modell-/Suchkontextvolumen verursachen API-Kosten.
   Abschaltung und Budget sind in `.env` beziehungsweise `.env.prod` konfigurierbar.
-  Für Änderungen Webserver/Worker neu starten beziehungsweise Container neu erstellen.
+  Für Änderungen Webserver neu starten beziehungsweise Container neu erstellen.
 - URL-Quellenannotationen werden direkt am belegten Antworttext zu Markdown-Links.
   Sie bleiben im bestehenden Nachrichten-TEXT und in der JSON-Antwort erhalten;
   es ist keine Migration erforderlich. Chat, Vorschläge und Vorhabenbeschreibungen
@@ -1181,7 +1260,8 @@ Nach der Anmeldung stehen `/docs`, `/redoc` und `/openapi.json` zur Verfügung. 
 
 | Methode | Route | Zweck |
 |---|---|---|
-| POST | `/proactivity/evaluate` | Manuelle Auswertung |
+| POST | `/proactivity/evaluate` | Manuelle Auswertung (Sitzung + Origin) |
+| POST | `/internal/proactivity/evaluate` | Geplanter Tick (separates Bearer-Token, am Proxy gesperrt) |
 | GET | `/proactivity/runs` | Auswertungsprotokoll |
 | GET | `/suggestions` | Vorschläge mit `status`-/`delivery`-Filter |
 | PATCH | `/suggestions/{id}` | Bestätigen, zurückstellen oder verwerfen |
@@ -1236,6 +1316,65 @@ Die Oberfläche leitet bei fehlender Sitzung zur Anmeldung weiter.
 Die meisten JSON-Listen begrenzen `limit` auf 1–500. Für vollständige Datensicherungen `pg_dump` verwenden.
 
 ## Tests und Diagnose
+
+### Worker-Ablösung am 15.11.2026
+
+Analyse: `app.worker` importierte zunächst Einstellungen und APScheduler.
+Beim ersten geplanten Lauf folgte `agent.evaluation` → `agent.assistant` →
+Speichersuche/Threads → `storage.embeddings` → `sentence_transformers` mit
+PyTorch/Transformers. Bereits der Bibliotheksimport ist umfangreich; das
+Embedding-Modell selbst wird erst durch `get_model()` bei Embedding-Nutzung
+geladen und durch `lru_cache` pro Prozess gehalten. Der Worker behielt anschließend
+Bibliotheken und gegebenenfalls Modell dauerhaft. Das gemeinsame Cache-Volume
+teilte Modelldateien, keine Python-Modellinstanz. Die genaue Aufteilung der
+berichteten 810 MiB PSS wurde hier nicht gemessen.
+
+Entfernt: `app.worker`, APScheduler-Abhängigkeit und Worker-Compose-Service.
+Auswertung und Modelle laufen ausschließlich im bestehenden API-Prozess;
+API-/UI-Aufrufe verwenden denselben DB-Lock. Kein Schemawechsel erforderlich.
+Timerbetrieb und Einrichtung stehen im Abschnitt
+[systemd-Timer](#systemd-timer-auf-dem-docker-host). Ältere Prüfberichte unten
+beschreiben den damaligen Worker-Stand und sind historische Nachweise.
+
+Verifikation in isolierter Python-3.12-Umgebung mit CPU-PyTorch:
+`python -m pytest -q -o faulthandler_timeout=30`: **285 bestanden, 71 übersprungen**
+(16,33 Sekunden). PostgreSQL war nicht erreichbar, daher sind DB-Integrationstests
+inklusive echter Advisory-Lock-Prüfung übersprungen; Browser-/Docker-Prüfungen sind
+optional und wurden ebenfalls nicht ausgeführt. Token-Scope, Fehlerantworten,
+Sommer-/Winterzeit, tägliche Fälligkeit und Freigabe der Sperre bei Erfolg/Fehler
+wurden mit isolierten Werkzeug-/Storage-Daten geprüft, ohne echte Modellaufrufe.
+`systemd-analyze verify` für beide Units, `bash -n scripts/update.sh`,
+`git diff --check` und Compose-Konfigurationsauflösung mit Testwert für den
+Passwort-Hash erfolgreich; die Service-Liste enthält `db`, `migrate`, `web`, `caddy`.
+Ein Docker-Lauf war wegen fehlender Socket-Rechte (auch außerhalb der Sandbox)
+nicht möglich. Die Schema-Dateien wurden nicht verändert.
+
+**RAM:** Nutzerangabe vor Änderung: API etwa 770 MiB PSS, Worker etwa 810 MiB
+PSS (zusammen etwa 1580 MiB). Erwartet wird eine Einsparung in der Größenordnung
+des entfallenden Workers, also mehrerer hundert MiB; 810 MiB sind der berichtete
+Ausgangswert, keine gemessene oder garantierte Nettoersparnis. Geteilte Seiten
+werden bei PSS neu verteilt, und API-Nutzung/Modelle können den verbleibenden
+Prozess verändern. curl läuft nur kurz; kein dauerhaftes Python-Scheduler-RAM.
+
+Vor dem Update und nach mindestens einer vergleichbaren Auswertung auf dem LXC
+PSS erfassen (für `web`, vor dem Update zusätzlich `worker`):
+
+```bash
+container=$(docker compose --env-file .env.prod -f compose.prod.yaml ps -q web)
+pid=$(docker inspect --format '{{.State.Pid}}' "$container")
+sudo awk '/^Pss:/ {printf "PSS: %.1f MiB\n", $2/1024}' /proc/"$pid"/smaps_rollup
+docker compose --env-file .env.prod -f compose.prod.yaml ps -a
+journalctl -u hugo-proactivity.service --since today
+```
+
+Die PID-Messung gilt für den bisherigen einzelnen Python-Hauptprozess pro
+Container. Auch API-PSS nach dem Lauf und die Summe aller betroffenen Prozesse
+vergleichen; `docker stats --no-stream` ist eine ergänzende Container-Messung,
+kein Ersatz für PSS. Zielprüfung: kein Worker, aktivierter Timer nach LXC-Neustart,
+ein `scheduled`-Lauf nach Fälligkeit und kein zweiter Lauf bei gleichzeitigem
+UI-/Scheduler-Aufruf. LXC-RAM-Messung, Boot-Test und echte Modell-/Kalenderauswertung
+wurden in dieser Entwicklungsumgebung nicht durchgeführt.
+
 
 Prüfung vom 11.11.2026: Modellwechsel und täglicher Zeitplan
 
@@ -1484,7 +1623,7 @@ Ergänzende Kalenderdiagnose am 07.11.2026:
 Gezielt Start, Migration und Anmeldung prüfen:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q tests/test_migrations.py tests/test_config.py tests/test_worker.py tests/test_auth.py tests/test_auth_storage.py tests/test_web.py
+.\.venv\Scripts\python.exe -m pytest -q tests/test_migrations.py tests/test_config.py tests/test_scheduler.py tests/test_auth.py tests/test_auth_storage.py tests/test_web.py
 ```
 
 ### Docker-Smoke-Test
@@ -1500,7 +1639,7 @@ Der Test verwendet ein isoliertes Compose-Projekt mit Testzugängen und prüft:
 
 - Start und Anmeldung
 - Schreibrechte im Modellcache
-- Ausgehenden Worker-Zugriff
+- Ausgehenden API-Zugriff und Abwesenheit des Worker-Service
 - Sitzungserhalt nach Migration und Neuerstellen der Container
 
 Die Testvolumes werden anschließend entfernt.
@@ -1546,8 +1685,8 @@ Der Embedding-Test kann das Modell herunterladen. Das Google-Skript benötigt se
 | Env-Werte werden nicht übernommen | Prozessvariablen prüfen; Docker-Container mit `up` neu erstellen |
 | Port 8000 belegt | Server beenden oder `--port` beziehungsweise `WEB_PORT` verwenden |
 | Migration fehlgeschlagen | Logs und Exitcode prüfen; keine Historienzeilen löschen |
-| Keine Vorschläge | Auswertung auslösen, Worker und `evaluation_runs` prüfen |
-| Worker erreicht APIs nicht | Netzwerk und API-Schlüssel prüfen |
+| Keine Vorschläge | Auswertung auslösen, Timer und `evaluation_runs` prüfen |
+| Auswertung erreicht APIs nicht | Netzwerk und API-Schlüssel prüfen |
 | Erster Start dauert lange | Bibliotheksimporte, Modell-Download, Cache und RAM prüfen |
 | Chatantwort leer | Modellstatus und Tokenverbrauch prüfen |
 | Speicherplatz knapp | Daten-, Volume-, Backup- und Loggrößen prüfen |
@@ -1562,7 +1701,7 @@ Fehlerberichte: [GitHub Issues](https://github.com/jhohmann/hugo/issues).
 
 ### Grenzen
 
-- Ein Nutzer und ein Worker; keine getrennten Arbeits-/Privatkonten.
+- Ein Nutzer und eine gleichzeitig laufende Auswertung; keine getrennten Arbeits-/Privatkonten.
 - Erinnerungsupdates nur für den Status `proposed`.
 - Ereignis-, Handlungs- und Deadline-Felder lassen sich über Agentenwerkzeuge nicht leeren.
 - Semantisch ähnliche Vorschläge können trotz exakter Duplikatprüfung erneut erscheinen.

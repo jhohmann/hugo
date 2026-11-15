@@ -71,14 +71,14 @@
   </section>
   <section class="card settings-card" aria-labelledby="schedule-heading">
     <h2 id="schedule-heading">Tägliche Auswertung</h2>
-    <p class="muted">Hugo prüft laufende Vorhaben und zeitkritische nächste Schritte. Dafür muss Hugos Hintergrunddienst laufen.</p>
+    <p class="muted">Hugo prüft laufende Vorhaben und zeitkritische nächste Schritte. Dafür muss der systemd-Timer auf dem Docker-Host laufen.</p>
     <div class="settings-fields">
       <label>Stunde (Europe/Berlin)<input type="number" name="SCHEDULER_HOUR" value="{{ s.SCHEDULER_HOUR }}" min="0" max="23" required></label>
       <label>Minute<input type="number" name="SCHEDULER_MINUTE" value="{{ s.SCHEDULER_MINUTE }}" min="0" max="59" required></label>
     </div>
-    <p class="muted">Berliner Ortszeit; Sommer- und Winterzeit werden automatisch berücksichtigt. Der laufende Hintergrunddienst übernimmt die Uhrzeit innerhalb einer Minute.</p>
+    <p class="muted">Berliner Ortszeit; Sommer- und Winterzeit werden automatisch berücksichtigt. Der Timer prüft die Uhrzeit standardmäßig jede Minute.</p>
     {% if last_run %}<p>Letzte Auswertung: {{ last_run.started_at|de_datetime }} · {{ 'Geplant' if last_run.trigger_source == 'scheduled' else 'Manuell' }} · {{ {'completed': 'Abgeschlossen', 'failed': 'Fehlgeschlagen', 'running': 'Gestartet'}.get(last_run.status, last_run.status) }}</p>{% else %}<p>Noch keine Auswertung protokolliert.</p>{% endif %}
-    <p class="muted">Ob der Hintergrunddienst gerade läuft, ist hier noch nicht prüfbar.</p>
+    <p class="muted">Ob der Timer gerade läuft, ist hier noch nicht prüfbar.</p>
   </section>
   <div class="settings-save">
     <button class="button button-primary" type="submit">Einstellungen speichern</button>

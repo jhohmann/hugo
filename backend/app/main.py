@@ -142,6 +142,16 @@ def evaluate_proactivity():
     return run_evaluation(trigger="manual")
 
 
+@app.post("/internal/proactivity/evaluate", include_in_schema=False)
+def evaluate_scheduled_proactivity():
+    """Restricted scheduler tick; reuse the existing evaluation in this process."""
+    try:
+        return run_evaluation(trigger="scheduled", only_if_due=True)
+    except Exception:
+        logger.exception("Scheduled evaluation failed")
+        raise HTTPException(status_code=502, detail="Auswertung fehlgeschlagen.")
+
+
 @app.get("/proactivity/runs")
 def get_runs(limit: int = 50):
     """Kontrolle: bisherige Evaluationsläufe."""

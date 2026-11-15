@@ -12,7 +12,7 @@ from psycopg.conninfo import make_conninfo
 from app import auth, migrate
 from app.agent import assistant, evaluation
 from app.main import app
-from app.storage import database, suggestions, threads, thread_chats
+from app.storage import database, suggestions, threads, thread_chats, evaluation as evaluation_storage
 from app.tools import dates
 
 
@@ -28,7 +28,7 @@ def store(monkeypatch):
     try:
         assert migrate.run_migrations(dsn)["status"] == "ok"
         connect = lambda: psycopg.connect(dsn)
-        for module in (database, suggestions, threads, thread_chats):
+        for module in (database, suggestions, threads, thread_chats, evaluation_storage):
             monkeypatch.setattr(module, "get_connection", connect)
         vector = [1.0] + [0.0] * 383
         monkeypatch.setattr(threads, "embed_document", lambda _: vector)
@@ -161,7 +161,7 @@ def test_authenticated_api_and_ui_deferral(store, monkeypatch):
         assert suggestions.list_suggestions()[0]["deferred_until"] == date(2026, 11, 10)
 
 
-def test_worker_evaluation_reopens_due_without_model_duplicates(store, monkeypatch):
+def test_scheduled_evaluation_reopens_due_without_model_duplicates(store, monkeypatch):
     tid = threads.create_thread("Offen", status="waiting", review_on="2026-11-07")
     sid = suggestions.create_suggestion(tid, "Nachfassen")["suggestion_id"]
     suggestions.update_suggestion_status(sid, "deferred", deferred_until="2026-11-08")
