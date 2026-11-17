@@ -38,7 +38,7 @@ def migration_files(tmp_path):
 def test_fresh_install_and_repeat(database):
     result = migrate.run_migrations(database)
     assert result["status"] == "ok"
-    assert [m["version"] for m in result["applied"]] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+    assert [m["version"] for m in result["applied"]] == list(range(1, 16))
     with psycopg.connect(database) as conn:
         assert conn.execute("SELECT count(*) FROM pg_tables WHERE schemaname='public'").fetchone()[0] == 22
         assert conn.execute("SELECT checksum FROM schema_version").fetchone()[0]
@@ -116,7 +116,7 @@ def test_concurrent_runners_apply_once(database):
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: migrate.run_migrations(database), range(2)))
     assert all(result["status"] == "ok" for result in results)
-    assert sum(len(result["applied"]) for result in results) == 14
+    assert sum(len(result["applied"]) for result in results) == 15
 
 
 def test_duplicate_versions_rejected_before_connect(tmp_path):
@@ -208,9 +208,9 @@ def test_typed_upgrade_preserves_legacy_suggestion(database, tmp_path):
         assert conn.execute("SELECT paused, last_progress_on, last_confirmed_at FROM threads WHERE id = %s", (tid,)).fetchone() == (False, None, None)
 
 
-@pytest.mark.parametrize("baseline_version", range(1, 14))
+@pytest.mark.parametrize("baseline_version", range(1, 15))
 def test_upgrade_from_each_version_preserves_existing_records(database, tmp_path, baseline_version):
-    """Exercise every deployed prefix, including typed replies and 013 -> 014."""
+    """Exercise every deployed prefix, including the planning preferences seed."""
     for version, source in migrate.get_migration_files():
         if version <= baseline_version:
             (tmp_path / source.name).write_bytes(source.read_bytes())
@@ -232,11 +232,17 @@ def test_upgrade_from_each_version_preserves_existing_records(database, tmp_path
         before = {table: conn.execute(sql.SQL("SELECT row_to_json(t) FROM {} t").format(sql.Identifier(table))).fetchall() for table in tables}
     result = migrate.run_migrations(database)
     assert result["status"] == "ok", result
-    assert [entry["version"] for entry in result["applied"]] == list(range(baseline_version + 1, 15))
+    assert [entry["version"] for entry in result["applied"]] == list(range(baseline_version + 1, 16))
     with psycopg.connect(database) as conn:
         for table, rows in before.items():
             after = [row[0] for row in conn.execute(sql.SQL("SELECT row_to_json(t) FROM {} t").format(sql.Identifier(table)))]
             for (old,) in rows:
+                if table == "app_settings":
+                    new = next(row for row in after if row["id"] == old["id"])
+                    assert all(new["values"].get(key) == value for key, value in old["values"].items())
+                    assert "HUGO_PLANNING_RULES" in new["values"]
+                    assert new["revision"] == old["revision"] + ("HUGO_PLANNING_RULES" not in old["values"])
+                    continue
                 assert any(all(new.get(key) == value for key, value in old.items()) for new in after), table
         assert conn.execute("SELECT last_progress_on FROM threads WHERE id=%s", (tid,)).fetchone()[0] is None
         assert conn.execute("SELECT reason FROM suggestion_reactions LIMIT 1").fetchone() in (None, (None,))

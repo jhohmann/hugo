@@ -272,6 +272,33 @@ entfernen und den nächsten Schritt aktualisieren.
 
 Die Bestätigung eines allgemeinen Vorschlags ersetzt keine Kalenderfreigabe. Kalenderaktionen haben einen eigenen Bestätigungsweg.
 
+Die persönlichen Regeln unter **Einstellungen → Zeitplanung & Kalender** gelten
+für Chat und automatische Auswertungen. Migration `015_time_planning_preferences.sql`
+hinterlegt die am 17.11.2026 vorgegebenen Regeln einmalig, sofern noch keine
+Planungsregeln gespeichert sind; andere Einstellungen bleiben erhalten:
+
+- **Arbeit:** Kalender „julianhohmann“, Kernzeit Montag bis Freitag 08:00–16:30 Uhr
+  in Europe/Berlin. Wochenendarbeit benötigt eine konkrete dringende Begründung;
+  Zeit außerhalb der Kernzeit zählt nicht pauschal als Arbeitskapazität.
+- **Privat:** außerhalb der Kernzeit, Kalender „julianhohmann@googlemail“ und
+  „gemeinsame Termine“. Freie Restzeit ist keine Zusage vollständiger Verfügbarkeit.
+- **Urlaube:** Sperrzeiten für berufliche und private Termine, auch bei als
+  verfügbar markierten Einträgen. Ganztägige Einträge sperren ganze Tage.
+- **Jahrestermine:** optionale interessante Veranstaltungen, keine Belegung und
+  keine zugesagte Teilnahme. Hugo kann sie bei einem konkreten Anlass vorschlagen.
+
+Das Modell ordnet die Kalender anhand von `list_calendars` zu und wählt die
+relevanten IDs und Zeitfenster. Unklare oder fehlende Zuordnungen müssen als
+Unsicherheit behandelt werden. `find_free_slots` unterstützt mehrere
+`calendar_ids`, zusätzliche `blocking_calendar_ids` und `weekdays` (Montag=0 bis
+Sonntag=6); bestehendes `calendar_id` bleibt verfügbar. Sperrkalender blockieren
+auch transparente Einträge. Die Verfügbarkeitsabfrage liest alle Ergebnisseiten,
+damit Einträge nach der ersten Seite nicht übersehen werden. Getrennte Tagesfenster
+werden getrennt abgefragt. Ohne Kalenderauswahl gilt weiterhin die bisherige
+Auswertung aller Kalender; die Regelanwendung und Ausnahmeneinschätzung bleiben
+modellgeführt, nicht durch feste berufliche/private Python-Regeln erzwungen.
+Bekannte verbindliche Zusagen und Konflikte zwischen Bereichen bleiben relevant.
+
 ### Darstellung
 
 Die Oberfläche verwendet serverseitige Jinja2-Templates und lokale CSS-/JavaScript-Dateien.
@@ -350,6 +377,10 @@ Anwendungseinstellungen zentral erreichbar, auch auf dem Smartphone:
 - Änderbar: KI-Zugang und Hauptmodell, kostenpflichtige API-Reserve mit eigenem
   Modell und Wartezeit, Webrecherche samt Aktionslimit, Gesprächsbudget und
   tägliche Auswertungszeit (Europe/Berlin). Verfügbare Modellnamen hängen vom Zugang ab.
+- Persönliche Planungsregeln als bearbeitbarer Text (maximal 6000 Zeichen),
+  beispielsweise relevante Kalender, Kernzeiten und Sperrzeiten. Optionaler
+  Umgebungsstandard: `HUGO_PLANNING_RULES`; ohne Vorgabe leer. Die Regeln werden
+  pro Werkzeuglauf zusammen mit den übrigen Einstellungen eingelesen.
 - Die letzte Auswertung wird mit Zeitpunkt, Auslöser und Ergebnis angezeigt;
   ein Timer-Live-Status wird mangels Heartbeat nicht behauptet.
 
@@ -357,6 +388,8 @@ Migration `008_app_settings.sql` ergänzt eine gemeinsame, nicht geheime
 Einstellungszeile mit Revision und Änderungszeit. Zunächst gelten weiterhin
 die Umgebungswerte. Nach dem Speichern haben die Werte der Seite Vorrang für
 Web; „Servervorgaben wiederherstellen“ entfernt diese Überschreibung.
+Das gilt auch für Planungsregeln: Ohne `HUGO_PLANNING_RULES` in der Umgebung sind
+sie nach dem Zurücksetzen leer. Die einmalige Migration spielt sie nicht erneut ein.
 Veraltete Formulare erhalten HTTP 409, statt neuere Änderungen zu überschreiben.
 Änderungen werden mit Revision protokolliert. Modellaufrufe und Werkzeugschleifen
 verwenden einen konsistenten Einstellungsstand bis zu ihrem Abschluss.
@@ -1504,6 +1537,20 @@ Die Oberfläche leitet bei fehlender Sitzung zur Anmeldung weiter.
 Die meisten JSON-Listen begrenzen `limit` auf 1–500. Für vollständige Datensicherungen `pg_dump` verwenden.
 
 ## Tests und Diagnose
+
+### UI und persönliche Planungsregeln am 17.11.2026
+
+Die Heute-Ansicht wurde mit Klartext-Überschriften, separaten Vorhabenlinks,
+angepassten Hell-/Dunkelkontrasten und neu angeordneten Kartenaktionen überarbeitet.
+Die persönlichen Planungsregeln und die Kalenderauswahl sind wie im Abschnitt
+[Kalender](#kalender) beschrieben implementiert. Auf ausdrücklichen Nutzerwunsch
+wurden dafür keine Tests ausgeführt; vorhandene Migrations- und Einstellungsprüfungen
+wurden lediglich an die neue Migration angepasst. Keine Browser-, Modell- oder
+Live-Kalenderprüfung. Der lokale Aufruf von `python -m app.migrate` scheiterte
+auch außerhalb der Sandbox am Datenbankverbindungsaufbau (`ConnectionTimeout`).
+Migration `015_time_planning_preferences.sql` ist deshalb hier nicht als angewendet
+bestätigt. Nächster Betriebsschritt: beim regulären lokalen/Docker-Start anwenden;
+die Zuordnung und Regelbefolgung anschließend in der Zielumgebung beobachten.
 
 ### Worker-Ablösung am 15.11.2026
 

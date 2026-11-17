@@ -49,15 +49,15 @@ def test_settings_store_persists_and_rejects_stale_updates(database, monkeypatch
     monkeypatch.setattr(storage, "get_connection", lambda: psycopg.connect(database))
     monkeypatch.setattr(storage, "read_settings", real_read)
     monkeypatch.setattr(storage, "save_settings", real_save)
-    assert settings.current()["revision"] == 0
+    revision = settings.current()["revision"]
     values = {**form_values(), "HUGO_MODEL": "saved-model", "SCHEDULER_HOUR": "15"}
-    settings.save(values, 0)
+    settings.save(values, revision)
     assert settings.current()["values"]["HUGO_MODEL"] == "saved-model"
     with pytest.raises(storage.SettingsConflict):
-        settings.save(form_values(), 0)
+        settings.save(form_values(), revision)
     assert settings.current()["values"]["SCHEDULER_HOUR"] == "15"
-    settings.reset(1)
-    assert real_read()["values"] == {} and real_read()["revision"] == 2
+    settings.reset(revision + 1)
+    assert real_read()["values"] == {} and real_read()["revision"] == revision + 2
 
 
 def test_runtime_overrides_and_consistent_snapshot(preferences, monkeypatch):

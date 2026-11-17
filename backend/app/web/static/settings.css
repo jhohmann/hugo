@@ -2,6 +2,8 @@
 .settings-connections, .settings-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .settings-card { padding: 22px; }
 .settings-card h2 { margin: 0; }
+.settings-planning-label { display: block; margin: 16px 0 8px; font-size: .9rem; }
+#planning-rules { display: block; width: 100%; line-height: 1.6; }
 .settings-card .source-link { color: var(--accent); }
 .settings-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
 .settings-card-head .status { white-space: nowrap; }

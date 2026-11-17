@@ -23,6 +23,7 @@ FIELDS = {
     "HUGO_CHAT_HISTORY_TOKENS": ("12000", "Gesprächsbudget", 2000, 60000),
     "SCHEDULER_HOUR": ("8", "Auswertungsstunde", 0, 23),
     "SCHEDULER_MINUTE": ("0", "Auswertungsminute", 0, 59),
+    "HUGO_PLANNING_RULES": ("", "Zeitplanung und Kalender", None, None),
 }
 BOOLEAN_FIELDS = {"HUGO_API_FALLBACK_ENABLED", "HUGO_WEB_SEARCH_ENABLED"}
 
@@ -74,6 +75,9 @@ def validate(values):
         elif key == "HUGO_MODEL_PROVIDER":
             if value not in {"api", "chatgpt"}:
                 raise ValueError("KI-Zugang: Bitte API oder ChatGPT-Abo wählen.")
+        elif key == "HUGO_PLANNING_RULES":
+            if len(value) > 6000 or "\x00" in value:
+                raise ValueError("Zeitplanung und Kalender: maximal 6000 Zeichen ohne Nullzeichen.")
         elif not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,99}", value):
             raise ValueError(f"{label}: Bitte einen gültigen Modellnamen eingeben.")
         result[key] = value

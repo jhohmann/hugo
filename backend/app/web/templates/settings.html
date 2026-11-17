@@ -49,6 +49,13 @@
 
 <form method="post" action="/ui/settings" class="settings-form">
   <input type="hidden" name="revision" value="{{ preferences.revision }}">
+  <section class="card settings-card" aria-labelledby="planning-heading">
+    <h2 id="planning-heading">Zeitplanung &amp; Kalender</h2>
+    <p class="muted" id="planning-help">Welche Kalender zählen für Arbeit und Privates? Halte hier Zeitfenster, Sperrzeiten und optionale Veranstaltungen fest. Hugo berücksichtigt diese Regeln im Chat und bei automatischen Auswertungen.</p>
+    <label class="settings-planning-label" for="planning-rules">Deine Planungsregeln</label>
+    <textarea id="planning-rules" name="HUGO_PLANNING_RULES" rows="10" maxlength="6000" aria-describedby="planning-help">{{ s.HUGO_PLANNING_RULES }}</textarea>
+    <p class="muted">Kalendernamen bitte eindeutig angeben. Freie Zeit ist noch keine Zusage; Änderungen an Terminen benötigen weiterhin deine Freigabe.</p>
+  </section>
   <section class="card settings-card" aria-labelledby="model-heading">
     <h2 id="model-heading">Modell &amp; Zugang</h2>
     <div class="settings-fields">

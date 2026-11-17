@@ -306,6 +306,8 @@ def compute_free_slots(
     duration_minutes: int = 60,
     day_start: time = time(8, 0),
     day_end: time = time(20, 0),
+    *,
+    weekdays: list[int] | None = None,
 ) -> list[dict]:
     """Freie Fenster je Tag zwischen day_start und day_end.
 
@@ -316,6 +318,9 @@ def compute_free_slots(
     slots = []
     day = day_from
     while day <= day_to:
+        if weekdays is not None and day.weekday() not in weekdays:
+            day += timedelta(days=1)
+            continue
         window_start = datetime.combine(day, day_start, tzinfo=BERLIN)
         window_end = datetime.combine(day, day_end, tzinfo=BERLIN)
         cursor = window_start

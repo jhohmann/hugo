@@ -136,23 +136,52 @@ def find_free_slots(
     day_start: time = time(8, 0),
     day_end: time = time(20, 0),
     calendar_id: str | None = None,
+    *,
+    calendar_ids: list[str] | None = None,
+    blocking_calendar_ids: list[str] | None = None,
+    weekdays: list[int] | None = None,
 ) -> list[dict]:
-    """Freie Zeitfenster über alle Kalender hinweg."""
-    if calendar_id:
-        calendars = [{"id": calendar_id}]
-    else:
-        calendars = client.list_calendars()
+    """Availability in explicitly selected calendars; policy stays model-led."""
+    if day_to < day_from or day_start >= day_end:
+        raise ValueError("Zeitraum und Tagesfenster müssen aufsteigend sein.")
+    if type(duration_minutes) is not int or duration_minutes < 1:
+        raise ValueError("Die Mindestdauer muss eine positive ganze Minutenzahl sein.")
+    if weekdays is not None and (
+        not isinstance(weekdays, list)
+        or any(type(day) is not int or not 0 <= day <= 6 for day in weekdays)
+    ):
+        raise ValueError("Wochentage müssen als Liste von 0 (Montag) bis 6 (Sonntag) angegeben werden.")
+    for selection in (calendar_ids, blocking_calendar_ids):
+        if selection is not None and (
+            not isinstance(selection, list)
+            or any(not isinstance(value, str) or not value.strip() for value in selection)
+        ):
+            raise ValueError("Kalenderauswahl muss eine Liste nicht leerer Kalender-IDs sein.")
+    if calendar_id and calendar_ids is not None:
+        raise ValueError("calendar_id und calendar_ids nicht gleichzeitig angeben.")
+    available = {calendar["id"]: calendar for calendar in client.list_calendars()}
+    selected = set(calendar_ids) if calendar_ids is not None else (
+        {calendar_id} if calendar_id else set(available)
+    )
+    blocking = set(blocking_calendar_ids or [])
+    selected |= blocking
+    if selected - available.keys():
+        raise ValueError("Kalender nicht gefunden. Zuerst list_calendars verwenden.")
+    if not selected:
+        raise ValueError("Mindestens einen Belegungs- oder Sperrkalender auswählen.")
     events = []
     time_min = datetime.combine(day_from, time.min, tzinfo=BERLIN)
     time_max = datetime.combine(
         day_to + timedelta(days=1), time.min, tzinfo=BERLIN
     )
-    for calendar in calendars:
-        events.extend(
-            client.list_events(calendar["id"], time_min, time_max)
-        )
+    for selected_id in sorted(selected):
+        calendar_events = client.list_availability_events(selected_id, time_min, time_max)
+        if selected_id in blocking:
+            calendar_events = [{**event, "transparency": "opaque"} for event in calendar_events]
+        events.extend(calendar_events)
     return service.compute_free_slots(
-        events, day_from, day_to, duration_minutes, day_start, day_end
+        events, day_from, day_to, duration_minutes, day_start, day_end,
+        weekdays=weekdays,
     )
 
 

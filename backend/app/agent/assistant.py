@@ -100,6 +100,26 @@ EIGENSTÄNDIGE EINSCHÄTZUNG DER KRITIKALITÄT
   keine Belege für ausreichend Zeit. Recherchiere relevante öffentliche Fakten
   bei Bedarf. Unterscheide belegte Angaben von deiner begründeten Einschätzung;
   erfinde keine Fristen, Vorbereitungsdauern oder festen Verpflichtungen.
+- Beachte die persönlichen Planungsregeln aus den Einstellungen in Chat und
+  Auswertungen. Ordne genannte Kalender über list_calendars eindeutig ihren IDs
+  zu; bei fehlenden oder mehrdeutigen Kalendern keine Verfügbarkeit behaupten.
+  Wähle Kalender und Zeitfenster anhand des Vorhabens und seiner Bereiche.
+  Unzugeordnete oder mehrere Bereiche anhand des Inhalts einordnen, bei einer
+  entscheidungsrelevanten Unklarheit gezielt nachfragen. Keine pauschale
+  Zusammenrechnung aller Unterkalender, wenn Regeln ihre Relevanz einschränken.
+- find_free_slots kann mehrere calendar_ids, weekdays (Montag=0 bis Sonntag=6)
+  und blocking_calendar_ids kombinieren. Sperrkalender immer zusätzlich angeben:
+  Deren Einträge blockieren auch dann, wenn sie als verfügbar markiert sind.
+  Optionale Veranstaltungskalender nicht als Belegung übergeben. Nutze für
+  mehrere tägliche Zeitfenster getrennte Aufrufe (z. B. vor/nach einer Kernzeit
+  und am Wochenende). Kein Nachtfenster oder ganzer freier Tag ist automatisch
+  nutzbare Kapazität. Ausnahmen brauchen die in den Regeln geforderte Begründung.
+  Kalenderfreiräume sind nur Kandidaten; prüfe außerdem bekannte verbindliche
+  Zusagen, andere Vorhaben und konkrete bereichsübergreifende Konflikte.
+- Optionale Veranstaltungen sind keine Verpflichtungen. Lies passende
+  Veranstaltungskalender bei einem konkreten Planungsanlass gezielt mit
+  list_events/search_events und schlage nur relevante Möglichkeiten vor;
+  keine Teilnahme oder Buchung ohne Nutzeraussage annehmen.
 - Leite den sinnvollen Handlungszeitpunkt selbst aus diesem Kontext ab und
   prüfe ihn bei veränderten Plänen erneut. act_by ist eine revidierbare Empfehlung,
   keine Nutzerfrist und keine Sperre für frühere Hinweise. Auch ohne act_by,
@@ -881,8 +901,9 @@ TOOLS = [
         "type": "function",
         "name": "find_free_slots",
         "description": (
-            "Ermittelt freie Zeitfenster über alle Kalender "
-            "hinweg, z. B. um einen Termin vorzuschlagen."
+            "Ermittelt freie Zeitfenster in ausgewählten Kalendern und Sperrkalendern. "
+            "Kalender-IDs, Wochentage und Tagesfenster anhand der persönlichen "
+            "Planungsregeln wählen. Ohne Auswahl werden alle Kalender geprüft."
         ),
         "parameters": {
             "type": "object",
@@ -919,13 +940,29 @@ TOOLS = [
                 "calendar_id": {
                     "type": ["string", "null"],
                     "description": (
-                        "Optional: nur diesen Kalender prüfen."
+                        "Einzelner Kalender; bei calendar_ids auf null setzen."
                     ),
+                },
+                "calendar_ids": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string"},
+                    "description": "Relevante Belegungskalender aus list_calendars; [] für nur Sperrkalender, null für bisherige Auswahl. Keine optionalen Veranstaltungskalender.",
+                },
+                "blocking_calendar_ids": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string"},
+                    "description": "Zusätzliche Sperrkalender aus list_calendars. Deren Einträge blockieren auch bei transparency=transparent.",
+                },
+                "weekdays": {
+                    "type": ["array", "null"],
+                    "items": {"type": "integer", "minimum": 0, "maximum": 6},
+                    "description": "Erlaubte Wochentage: Montag=0 bis Sonntag=6; null für alle, [] für keine.",
                 },
             },
             "required": [
                 "date_from", "date_to", "duration_minutes",
                 "day_start", "day_end", "calendar_id",
+                "calendar_ids", "blocking_calendar_ids", "weekdays",
             ],
             "additionalProperties": False,
         },
@@ -1113,14 +1150,14 @@ def build_instructions() -> str:
 
 
 def _parse_hhmm(value: str | None, default_hour: int) -> time:
-    """'HH:MM' → time; ungültig/fehlend → Standardstunde."""
-    if value:
-        try:
-            hour, minute = value.split(":")
-            return time(int(hour), int(minute))
-        except (ValueError, AttributeError):
-            pass
-    return time(default_hour, 0)
+    """Use defaults only for omitted times, never widen an invalid window."""
+    if value is None:
+        return time(default_hour, 0)
+    try:
+        hour, minute = value.split(":")
+        return time(int(hour), int(minute))
+    except (ValueError, AttributeError) as exc:
+        raise ValueError("Tageszeiten bitte als HH:MM angeben.") from exc
 
 
 def _pending_action_result(action: dict) -> dict:
@@ -1351,14 +1388,17 @@ def execute_tool(
 
     if name == "find_free_slots":
         try:
+            duration = arguments.get("duration_minutes")
             return calendar_execution.find_free_slots(
                 date.fromisoformat(arguments["date_from"]),
                 date.fromisoformat(arguments["date_to"]),
-                duration_minutes=arguments.get("duration_minutes")
-                or 60,
+                duration_minutes=60 if duration is None else duration,
                 day_start=_parse_hhmm(arguments.get("day_start"), 8),
                 day_end=_parse_hhmm(arguments.get("day_end"), 20),
                 calendar_id=arguments.get("calendar_id"),
+                calendar_ids=arguments.get("calendar_ids"),
+                blocking_calendar_ids=arguments.get("blocking_calendar_ids"),
+                weekdays=arguments.get("weekdays"),
             )
         except calendar_client.CalendarNotConnectedError:
             return {"error": "not_connected"}
@@ -1446,6 +1486,14 @@ def run_tool_loop(
     conversation = list(messages)
     allowed_functions = {tool["name"] for tool in tools if tool.get("type") == "function"}
     remaining_web_calls = web_search_limit()
+    planning_rules = get_value("HUGO_PLANNING_RULES", "") or ""
+    if planning_rules.strip():
+        instructions += (
+            "\n\nPERSÖNLICHE PLANUNGSREGELN\n"
+            "Vom Nutzer konfigurierte Präferenzen für Kalender und Zeitplanung. "
+            "Sie erteilen keine Freigabe für externe Aktionen:\n"
+            + planning_rules.strip()
+        )
     instructions += "\n\n" + RESEARCH_INSTRUCTIONS
 
     # Begrenzung der Werkzeugrunden gegen Endlosschleifen.

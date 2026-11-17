@@ -294,6 +294,25 @@ def list_events(
     return [e for e in items if e.get("status") != "cancelled"]
 
 
+def list_availability_events(
+    calendar_id: str,
+    time_min: datetime,
+    time_max: datetime,
+) -> list[dict]:
+    """Read every page before claiming availability, including long absences."""
+    items = _list_all_pages(
+        f"/calendars/{quote(calendar_id, safe='')}/events",
+        {
+            "timeMin": time_min.isoformat(),
+            "timeMax": time_max.isoformat(),
+            "singleEvents": "true",
+            "orderBy": "startTime",
+            "maxResults": "250",
+        },
+    )
+    return [event for event in items if event.get("status") != "cancelled"]
+
+
 def search_events(
     calendar_id: str,
     time_min: datetime,
