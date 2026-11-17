@@ -23,6 +23,7 @@ from app.storage.suggestions import (
     list_suggestions,
     update_suggestion_status,
 )
+from app.storage.suggestion_responses import answer_suggestion, SuggestionConflict
 from app.storage.threads import THREAD_STATUSES, list_threads, validate_tag
 from app.storage.database import (
     get_messages,
@@ -54,6 +55,12 @@ app.mount(
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     conversation_id: int | None = None
+
+
+class SuggestionAnswer(BaseModel):
+    answer: str = Field(min_length=1, max_length=80)
+    expected_revision: int = Field(ge=1)
+    text: str = Field(default="", max_length=4000)
 
 
 class SuggestionPatch(BaseModel):
@@ -193,6 +200,20 @@ def get_suggestions(
     }
 
 
+@app.post("/suggestions/{suggestion_id}/answer")
+def respond_to_suggestion(suggestion_id: int, payload: SuggestionAnswer):
+    try:
+        result = answer_suggestion(suggestion_id, payload.answer, expected_revision=payload.expected_revision,
+                                   text=payload.text, source="api")
+    except SuggestionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Meldung nicht gefunden.")
+    return result
+
+
 @app.patch("/suggestions/{suggestion_id}")
 def patch_suggestion(suggestion_id: int, patch: SuggestionPatch):
     """Vorschlag bestätigen, zurückstellen oder verwerfen."""
@@ -206,7 +227,7 @@ def patch_suggestion(suggestion_id: int, patch: SuggestionPatch):
         )
     try:
         result = update_suggestion_status(
-            suggestion_id, patch.status, deferred_until=patch.deferred_until,
+            suggestion_id, patch.status, deferred_until=patch.deferred_until, source="api",
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

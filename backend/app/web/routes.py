@@ -5,6 +5,7 @@ JSON-API; eigene Fachlogik gibt es hier nicht.
 """
 
 import logging
+from datetime import date, datetime, time
 import os
 from pathlib import Path
 
@@ -34,10 +35,14 @@ from app.storage.suggestions import (
     list_suggestions,
     update_suggestion_status,
 )
-from app.storage.threads import get_thread, list_threads, validate_tag
+from app.storage.suggestion_responses import answer_suggestion, SuggestionConflict, KIND_LABELS, STATUS_ANSWERS
+from app.storage.threads import (
+    get_thread, list_threads, validate_tag, update_thread, ThreadConflict,
+)
+from app.storage.today import list_today
 from app.storage.thread_chats import conversation_threads, thread_conversations
 from app.tools.thread_references import ThreadReferenceError, reference_ids
-from app.tools.dates import today_berlin
+from app.tools.dates import BERLIN, today_berlin
 from app.web import formatting as fmt
 from app.web.timeline import TimelineData, demo_timeline
 
@@ -49,6 +54,7 @@ templates = Jinja2Templates(directory=WEB_DIR / "templates")
 templates.env.filters["de_date"] = fmt.de_date
 templates.env.filters["de_datetime"] = fmt.de_datetime
 templates.env.filters["source_links"] = fmt.source_links
+templates.env.globals.update(suggestion_kind_labels=KIND_LABELS, status_answers=STATUS_ANSWERS)
 
 router = APIRouter(prefix="/ui", include_in_schema=False)
 
@@ -59,25 +65,12 @@ THREAD_GROUPS = ("active", "waiting", "proposed", "completed", "archived")
 
 
 def _nav(active: str, *, read_only: bool = False) -> dict:
-    open_count = count_open_suggestions() if read_only else len(list_suggestions(status="open", limit=500))
+    open_count = count_open_suggestions()
     return {
         "nav_active": active,
         "nav_open_suggestions": open_count,
         "nav_pending_calendar_actions": count_pending_actions(),
     }
-
-
-def _thread_titles(suggestions: list[dict]) -> dict:
-    """Thread-Titel für die Vorschlagsdarstellung."""
-    titles = {}
-    for suggestion in suggestions:
-        thread_id = suggestion.get("thread_id")
-        if thread_id is not None and thread_id not in titles:
-            thread = get_thread(thread_id)
-            titles[thread_id] = (
-                thread["title"] if thread else f"#{thread_id}"
-            )
-    return titles
 
 
 def _error_page(request: Request, status_code: int, message: str):
@@ -284,28 +277,36 @@ def chat_send(
 
 
 @router.get("/heute")
-def heute(request: Request):
-    open_suggestions = list_suggestions(
-        status="open", limit=200, mark_surfaced=True
-    )
-    deferred = list_suggestions(status="deferred", limit=200)
+def heute(request: Request, page: int = Query(1, ge=1), deferred_page: int = Query(1, ge=1)):
+    opened = list_today(page=page, mark_surfaced=True)
+    deferred = list_today(status="deferred", page=deferred_page)
     runs = list_runs(limit=1)
-    today = today_berlin()
     return templates.TemplateResponse(
-        request,
-        "heute.html",
-        {
-            "nav_active": "heute",
-            "nav_open_suggestions": len(open_suggestions),
-            "today": today,
-            "today_weekday": fmt.de_weekday(today),
-            "open_suggestions": open_suggestions,
-            "deferred_suggestions": deferred,
-            "thread_titles": _thread_titles(open_suggestions + deferred),
-            "last_run": runs[0] if runs else None,
+        request, "heute.html", {
+            "nav_active": "heute", "nav_open_suggestions": opened["total_count"],
+            "nav_pending_calendar_actions": count_pending_actions(),
+            "today": today_berlin(), "today_weekday": fmt.de_weekday(today_berlin()),
+            "opened": opened, "deferred": deferred, "last_run": runs[0] if runs else None,
+            "today_return": f"/ui/heute?page={opened['page']}&deferred_page={deferred['page']}",
             "fmt": fmt,
         },
     )
+
+
+@router.post("/suggestions/{suggestion_id}/answer")
+def suggestion_answer(
+    request: Request, suggestion_id: int, answer: str = Form(""),
+    expected_revision: int = Form(...), text: str = Form(""), next: str = Form("/ui/heute"),
+):
+    try:
+        result = answer_suggestion(suggestion_id, answer, expected_revision=expected_revision, text=text, source="ui")
+    except SuggestionConflict as exc:
+        return _error_page(request, 409, str(exc))
+    except ValueError as exc:
+        return _error_page(request, 400, str(exc))
+    if result is None:
+        return _error_page(request, 404, "Diese Meldung wurde nicht gefunden.")
+    return RedirectResponse(_safe_next(next), status_code=303)
 
 
 @router.post("/suggestions/{suggestion_id}")
@@ -315,6 +316,7 @@ def suggestion_action(
     action: str = Form(""),
     next: str = Form("/ui/heute"),
     deferred_until: str = Form(""),
+    expected_revision: int | None = Form(None),
 ):
     if action not in SUGGESTION_ACTIONS:
         return _error_page(
@@ -324,9 +326,12 @@ def suggestion_action(
             "zurückstellen, verwerfen.",
         )
     try:
+        guard = {"expected_revision": expected_revision} if expected_revision is not None else {}
         result = update_suggestion_status(
-            suggestion_id, action, deferred_until=deferred_until or None,
+            suggestion_id, action, deferred_until=deferred_until or None, source="ui", **guard,
         )
+    except SuggestionConflict as exc:
+        return _error_page(request, 409, str(exc))
     except ValueError as exc:
         return _error_page(request, 400, str(exc))
     if result is None:
@@ -423,8 +428,42 @@ def thread_detail(request: Request, thread_id: int, chat_page: int = Query(1, ge
             "suggestions": related,
             "thread_chats": thread_conversations(thread_id, page=chat_page),
             "fmt": fmt,
+            "deadline_day": thread["deadline"].astimezone(BERLIN).date() if thread.get("deadline") else None,
         },
     )
+
+
+@router.post("/threads/{thread_id}/decision")
+def thread_decision(
+    request: Request, thread_id: int, action: str = Form(""),
+    expected_updated_at: str = Form(""), deadline: str = Form(""),
+):
+    # This route is deliberately absent from the agent's tools. Authentication
+    # and same-origin enforcement are shared with all other browser writes.
+    if action not in ("completed", "archived", "deadline", "resume", "pause"):
+        return _error_page(request, 400, "Ungültige Entscheidung.")
+    try:
+        expected = datetime.fromisoformat(expected_updated_at)
+        if expected.tzinfo is None or expected.utcoffset() is None:
+            raise ValueError("Bitte das Vorhaben neu laden.")
+        if action == "deadline":
+            if not deadline.strip():
+                raise ValueError("Bitte einen Tag für die verbindliche Frist angeben.")
+            value = datetime.combine(date.fromisoformat(deadline), time.max, tzinfo=BERLIN)
+            changes = {"deadline": value}
+        elif action in ("resume", "pause"):
+            changes = {"paused": action == "pause", "confirm_stand": True}
+        else:
+            changes = {"status": action}
+        result = update_thread(thread_id, expected_updated_at=expected,
+                               user_decision=True, **changes)
+    except ThreadConflict as exc:
+        return _error_page(request, 409, str(exc))
+    except ValueError as exc:
+        return _error_page(request, 400, str(exc))
+    if result is None:
+        return _error_page(request, 404, "Dieses Vorhaben wurde nicht gefunden.")
+    return RedirectResponse(f"/ui/threads/{thread_id}#entscheidung", status_code=303)
 
 
 # --- Kalender ---

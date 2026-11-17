@@ -229,7 +229,11 @@ def test_suggestion_statuswechsel(cleanup):
     confirmed = update_suggestion_status(suggestion_id, "confirmed")
     assert confirmed["status"] == "confirmed"
 
-    deferred = update_suggestion_status(suggestion_id, "deferred")
+    # Handled suggestions cannot be deferred (existing follow-up contract).
+    with pytest.raises(ValueError, match="offene"):
+        update_suggestion_status(suggestion_id, "deferred")
+    still_open = _suggestion(cleanup, thread_id=None, content="Noch offener Vorschlag.")
+    deferred = update_suggestion_status(still_open["suggestion_id"], "deferred")
     assert deferred["status"] == "deferred"
 
     dismissed = update_suggestion_status(suggestion_id, "dismissed")

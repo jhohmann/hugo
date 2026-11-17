@@ -189,3 +189,10 @@ def test_password_hashing(encoded_password):
     assert not verify_password("x" * 1025, encoded_password)
     with pytest.raises(ValueError):
         hash_password("short")
+
+
+
+def test_thread_decision_requires_login(client):
+    response = client.post("/ui/threads/1/decision")
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/ui/login?")

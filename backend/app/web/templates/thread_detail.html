@@ -20,6 +20,11 @@
   {% endif %}
 
   <dl class="fact-list">
+    {% if thread.paused %}<dt>Projektpause</dt><dd>Pausiert – keine neuen Hinweise</dd>{% endif %}
+    <dt>Letzter belegter Fortschritt</dt><dd>{{ thread.last_progress_on|default(none)|de_date if thread.last_progress_on|default(none) else 'Unbekannt' }}</dd>
+    {% if thread.last_confirmed_at %}<dt>Stand zuletzt bestätigt</dt><dd>{{ thread.last_confirmed_at|de_datetime }}</dd>{% endif %}
+    {% if thread.last_response_at %}<dt>Letzte Antwort</dt><dd>{{ thread.last_response_at|de_datetime }}</dd>{% endif %}
+    {% if thread.last_hint_at %}<dt>Letzte Meldung erstellt</dt><dd>{{ thread.last_hint_at|de_datetime }}</dd>{% endif %}
     {% if thread.review_on %}
     <dt>Wiedervorlage</dt>
     <dd>{{ thread.review_on|de_date }} ({{ fmt.relative_label(thread.review_on) }})</dd>
@@ -86,6 +91,27 @@
   </div>
 </article>
 
+<section class="card" id="entscheidung" aria-labelledby="entscheidung-heading">
+  <h2 id="entscheidung-heading">Pause, Abschluss und Frist</h2>
+  <p>Hier entscheidest du selbst. Diese Änderungen betreffen das Vorhaben; Kalendertermine bleiben separat freizugeben.</p>
+  {% if thread.status not in ('completed', 'archived') %}
+  <form method="post" action="/ui/threads/{{ thread.id }}/decision" class="actions">
+    <input type="hidden" name="expected_updated_at" value="{{ thread.updated_at.isoformat() }}">
+    {% if thread.paused %}<button class="button" name="action" value="resume">Vorhaben fortsetzen</button>{% else %}<button class="button" name="action" value="pause">Vorhaben pausieren</button>{% endif %}
+    <button class="button" name="action" value="completed">Als erledigt markieren</button>
+    <button class="button" name="action" value="archived">Archivieren</button>
+  </form>
+  {% endif %}
+  <form method="post" action="/ui/threads/{{ thread.id }}/decision">
+    <input type="hidden" name="expected_updated_at" value="{{ thread.updated_at.isoformat() }}">
+    <input type="hidden" name="action" value="deadline">
+    <label for="decision-deadline">Verbindliche Frist (bis Tagesende, Berliner Zeit)</label>
+    <input id="decision-deadline" name="deadline" type="date" required
+           value="{{ deadline_day or '' }}">
+    <button class="button" type="submit">Frist verbindlich setzen</button>
+  </form>
+</section>
+
 <section class="thread-conversations" id="gespraeche" aria-labelledby="thread-chats-heading">
   <div class="section-heading"><h2 id="thread-chats-heading">Gespräche zu diesem Vorhaben</h2></div>
   {% for c in thread_chats['items'] %}
@@ -126,31 +152,15 @@
       <span class="date-hint {{ fmt.urgency_class(s.suggested_date) }}">{{ s.suggested_date|de_date }} ({{ fmt.relative_label(s.suggested_date) }})</span>
       {% endif %}
     </header>
+    <p class="muted">{{ suggestion_kind_labels[s.kind|default('proposal')] }}</p>
+    {% if s.obsolete_reason %}<p class="muted">Überholt: {{ s.obsolete_reason }}</p>{% endif %}
     <p class="suggestion-content">{{ s.content|source_links }}</p>
     {% if s.deferred_until %}<p class="date-hint">Zurückgestellt bis {{ s.deferred_until|de_date }}</p>{% endif %}
     {% if s.reason %}
     <p class="suggestion-reason muted">{{ s.reason|source_links }}</p>
     {% endif %}
     {% if s.status in ("open", "deferred") %}
-    <footer class="actions">
-      <form method="post" action="/ui/suggestions/{{ s.id }}">
-        <input type="hidden" name="action" value="deferred">
-        <input type="hidden" name="next" value="/ui/threads/{{ thread.id }}">
-        <label for="defer-{{ s.id }}">Wieder anzeigen am</label>
-        <input id="defer-{{ s.id }}" type="date" name="deferred_until" value="{{ s.deferred_until or '' }}" required>
-        <button type="submit" class="button button-small">Zurückstellen</button>
-      </form>
-      <form method="post" action="/ui/suggestions/{{ s.id }}">
-        <input type="hidden" name="action" value="confirmed">
-        <input type="hidden" name="next" value="/ui/threads/{{ thread.id }}">
-        <button type="submit" class="button button-primary button-small">Bestätigen</button>
-      </form>
-      <form method="post" action="/ui/suggestions/{{ s.id }}" data-confirm="Diesen Vorschlag wirklich verwerfen?">
-        <input type="hidden" name="action" value="dismissed">
-        <input type="hidden" name="next" value="/ui/threads/{{ thread.id }}">
-        <button type="submit" class="button button-danger button-small">Verwerfen</button>
-      </form>
-    </footer>
+    {% include "suggestion_actions.html" %}
     {% endif %}
   </article>
   {% endfor %}

@@ -31,3 +31,9 @@ def scheduled_due(conn, now=None):
         "AND (started_at AT TIME ZONE 'Europe/Berlin')::date = %s)",
         (now.date(),),
     ).fetchone()[0]
+
+
+def latest_review_cursor():
+    with get_connection() as conn:
+        row = conn.execute("SELECT review_cursor FROM evaluation_runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1").fetchone()
+        return row[0] if row else 0

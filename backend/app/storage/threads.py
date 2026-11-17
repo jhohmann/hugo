@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from datetime import datetime, timezone
 
 from pgvector.psycopg import register_vector
@@ -24,6 +25,14 @@ THREAD_STATUSES = (
     "archived",
 )
 
+class ThreadDecisionRequired(ValueError):
+    """Agent writes cannot make protected user decisions."""
+
+
+class ThreadConflict(ValueError):
+    """A user form was based on an obsolete thread state."""
+
+
 CLOSED_STATUSES = ("completed", "archived")
 THREAD_TAGS = ("arbeit", "privat")
 
@@ -37,7 +46,9 @@ COLUMNS = (
     " preparation_weeks, created_at, updated_at,"
     " ARRAY(SELECT tag FROM thread_tags"
     " WHERE thread_id = threads.id ORDER BY tag) AS tags,"
-    " review_on, waiting_for"
+    " review_on, waiting_for, paused, last_progress_on, progress_recorded_at,"
+    " last_confirmed_at, last_response_at,"
+    " (SELECT MAX(s.created_at) FROM suggestions s WHERE s.thread_id = threads.id) AS last_hint_at"
 )
 
 # Genauigkeit der Zeitangabe:
@@ -166,6 +177,8 @@ def _row_to_dict(row) -> dict:
         "tags": row[16],
         "review_on": row[17],
         "waiting_for": row[18],
+        "paused": row[19], "last_progress_on": row[20], "progress_recorded_at": row[21],
+        "last_confirmed_at": row[22], "last_response_at": row[23], "last_hint_at": row[24],
     }
 
 
@@ -284,6 +297,7 @@ def list_threads(
     if review_due_only:
         where += " AND " if where else "WHERE "
         where += """status NOT IN ('completed', 'archived')
+            AND NOT paused
             AND (review_on IS NULL OR review_on <= %s)
             AND NOT EXISTS (
                 SELECT 1 FROM suggestions s WHERE s.thread_id = threads.id
@@ -314,6 +328,21 @@ def list_threads(
                 params,
             )
             return [_row_to_dict(row) for row in cur.fetchall()]
+
+
+
+def list_thread_page(after_id=0, limit=50):
+    """Read a stable ID-ordered page of all open plans, including paused ones."""
+    if type(after_id) is not int or after_id < 0 or type(limit) is not int or not 1 <= limit <= 50:
+        raise ValueError("Cursor und Limit müssen gültige Ganzzahlen sein.")
+    with get_connection() as conn:
+        total = conn.execute("SELECT count(*) FROM threads WHERE status NOT IN ('completed', 'archived')").fetchone()[0]
+        rows = conn.execute(f"SELECT {COLUMNS} FROM threads WHERE status NOT IN ('completed', 'archived') AND id > %s ORDER BY id LIMIT %s",
+                            (after_id, limit + 1)).fetchall()
+        has_more = len(rows) > limit
+        items = [_row_to_dict(row) for row in rows[:limit]]
+        return {"threads": items, "total_count": total, "has_more": has_more,
+                "next_after_id": items[-1]["id"] if has_more else None}
 
 
 def search_threads(
@@ -381,7 +410,20 @@ def update_thread(
     review_on=None,
     waiting_for: str | None = None,
     clear_fields: list[str] | None = None,
+    agent_write: bool = False,
+    expected_updated_at: datetime | None = None,
+    user_decision: bool = False,
+    connection=None,
+    paused: bool | None = None,
+    response_received: bool = False,
+    confirm_stand: bool = False,
+    last_progress_on=None,
 ) -> dict | None:
+    if paused is not None and (type(paused) is not bool or not user_decision):
+        raise ValueError("Eine Projektpause benötigt eine direkte Nutzerentscheidung.")
+    last_progress_on = parse_date(last_progress_on)
+    if last_progress_on is not None and last_progress_on > today_berlin():
+        raise ValueError("Ein Fortschritt kann nicht in der Zukunft liegen.")
     # Nur explizit übergebene (nicht-None) Felder werden
     # geändert; alle anderen bleiben unangetastet.
 
@@ -452,10 +494,20 @@ def update_thread(
         sets.append("preparation_weeks = %s")
         params.append(preparation_weeks)
 
+    if paused is not None:
+        sets.append("paused = %s")
+        params.append(paused)
+    if response_received:
+        sets.append("last_response_at = clock_timestamp()")
+    if confirm_stand:
+        sets.append("last_confirmed_at = clock_timestamp()")
+    if last_progress_on is not None:
+        sets.extend(["last_progress_on = %s", "progress_recorded_at = clock_timestamp()"])
+        params.append(last_progress_on)
     if not sets and tags is None:
         raise ValueError("Keine Änderungen übergeben.")
 
-    with get_connection() as conn:
+    with (nullcontext(connection) if connection is not None else get_connection()) as conn:
         register_vector(conn)
         with conn.cursor() as cur:
             # Aktuelle Werte laden: Existenz prüfen, Embedding
@@ -471,7 +523,20 @@ def update_thread(
             if row is None:
                 return None
             before = _row_to_dict(row)
+            if expected_updated_at is not None and before["updated_at"] != expected_updated_at:
+                raise ThreadConflict("Das Vorhaben wurde inzwischen geändert. Bitte neu laden und erneut entscheiden.")
+            if agent_write and (
+                status in CLOSED_STATUSES
+                or (deadline is not None and before["deadline"] is not None
+                    and deadline != before["deadline"])
+            ):
+                raise ThreadDecisionRequired("Ausdrückliche Nutzerentscheidung erforderlich.")
 
+            if last_progress_on is not None:
+                cur.execute("SELECT role FROM messages WHERE id = %s", (source_message_id,))
+                evidence = cur.fetchone()
+                if evidence is None or evidence[0] != "user":
+                    raise ValueError("Fortschritt benötigt eine belegte Nutzernachricht.")
             if tags is not None:
                 _set_tags(cur, thread_id, tags)
 
@@ -513,15 +578,15 @@ def update_thread(
                 params,
             )
             updated = cur.fetchone()
-            if status in CLOSED_STATUSES or {"waiting_for", "blocked_reason"}.intersection(clear_fields):
+            if paused is True or status in CLOSED_STATUSES or {"waiting_for", "blocked_reason"}.intersection(clear_fields):
                 cur.execute(
-                    """UPDATE suggestions SET status = 'dismissed', deferred_until = NULL,
+                    """UPDATE suggestions SET status = 'dismissed', deferred_until = NULL, revision = revision + 1,
                        updated_at = NOW() WHERE thread_id = %s AND status IN ('open', 'deferred')""",
                     (thread_id,),
                 )
             elif review_on is not None and review_on > today_berlin():
                 cur.execute(
-                    """UPDATE suggestions SET status = 'deferred', deferred_until = %s,
+                    """UPDATE suggestions SET status = 'deferred', deferred_until = %s, revision = revision + 1,
                        updated_at = NOW() WHERE thread_id = %s AND status = 'open'""",
                     (review_on, thread_id),
                 )
@@ -530,5 +595,6 @@ def update_thread(
             record_thread_event(
                 cur, before, after, source_message_id=source_message_id,
                 automatic_fields=clearable if status in CLOSED_STATUSES else (),
+                user_decision=user_decision,
             )
             return after

@@ -1,5 +1,7 @@
 """Speicherung proaktiver Vorschläge und Evaluationsläufe."""
 
+from psycopg.types.json import Jsonb
+
 from app.storage.database import get_connection
 from app.tools.dates import parse_date, today_berlin
 
@@ -23,12 +25,14 @@ MAX_PRIORITY = 5
 COLUMNS = (
     "id, thread_id, run_id, content, reason, priority,"
     " suggested_date, delivery_status, status,"
-    " created_at, updated_at, deferred_until"
+    " created_at, updated_at, deferred_until, kind, response_options, allow_free_text, revision, occasion_key,"
+    " (SELECT r.reason FROM suggestion_reactions r WHERE r.suggestion_id = suggestions.id"
+    " AND r.source = 'internal' AND r.action = 'dismissed' ORDER BY r.id DESC LIMIT 1) AS obsolete_reason"
 )
 
 RUN_COLUMNS = (
     "id, trigger_source, status, threads_considered,"
-    " suggestions_created, error, started_at, finished_at"
+    " suggestions_created, error, started_at, finished_at, review_cursor"
 )
 
 
@@ -76,6 +80,8 @@ def _row_to_dict(row) -> dict:
         "created_at": row[9],
         "updated_at": row[10],
         "deferred_until": row[11],
+        "kind": row[12], "response_options": row[13],
+        "allow_free_text": row[14], "revision": row[15], "occasion_key": row[16], "obsolete_reason": row[17],
     }
 
 
@@ -88,7 +94,7 @@ def _run_to_dict(row) -> dict:
         "suggestions_created": row[4],
         "error": row[5],
         "started_at": row[6],
-        "finished_at": row[7],
+        "finished_at": row[7], "review_cursor": row[8],
     }
 
 
@@ -120,6 +126,7 @@ def finish_run(
     threads_considered: int | None = None,
     suggestions_created: int | None = None,
     error: str | None = None,
+    review_cursor: int = 0,
 ) -> None:
     if status not in ("completed", "failed"):
         raise ValueError(
@@ -135,14 +142,14 @@ def finish_run(
                     finished_at = NOW(),
                     threads_considered = %s,
                     suggestions_created = %s,
-                    error = %s
+                    error = %s, review_cursor = %s
                 WHERE id = %s
                 """,
                 (
                     status,
                     threads_considered,
                     suggestions_created,
-                    error,
+                    error, review_cursor,
                     run_id,
                 ),
             )
@@ -171,11 +178,11 @@ def _reactivate_due(cur):
     cur.execute(
         """UPDATE suggestions s
            SET status = 'open', deferred_until = NULL,
-               delivery_status = 'pending', updated_at = NOW()
+               delivery_status = 'pending', revision = revision + 1, updated_at = NOW()
            WHERE status = 'deferred' AND deferred_until <= %s
              AND NOT EXISTS (
                  SELECT 1 FROM threads t WHERE t.id = s.thread_id
-                 AND (t.status IN ('completed', 'archived') OR t.review_on > %s)
+                 AND (t.status IN ('completed', 'archived') OR t.paused OR t.review_on > %s)
              )""",
         (today, today),
     )
@@ -188,7 +195,18 @@ def create_suggestion(
     priority: int | None = None,
     suggested_date=None,
     run_id: int | None = None,
+    kind: str = "proposal",
+    response_options: list[str] | None = None,
+    allow_free_text: bool = False,
+    occasion_key: str | None = None,
 ) -> dict:
+    from app.storage.suggestion_responses import validate_contract
+    response_options = [] if response_options is None else response_options
+    validate_contract(kind, response_options, allow_free_text, thread_id)
+    if occasion_key is not None:
+        if not isinstance(occasion_key, str) or not occasion_key.strip() or len(occasion_key) > 160:
+            raise ValueError("Der Anlassschlüssel muss ein kurzer nichtleerer Text sein.")
+        occasion_key = occasion_key.strip().casefold()
     content = (content or "").strip()
     if not content:
         raise ValueError("Leerer Vorschlagstext.")
@@ -199,7 +217,7 @@ def create_suggestion(
         with conn.cursor() as cur:
             if thread_id is not None:
                 cur.execute(
-                    "SELECT status, review_on FROM threads WHERE id = %s FOR UPDATE",
+                    "SELECT status, review_on, paused FROM threads WHERE id = %s FOR UPDATE",
                     (thread_id,),
                 )
                 thread = cur.fetchone()
@@ -209,6 +227,8 @@ def create_suggestion(
                     )
                 if thread[0] in ("completed", "archived"):
                     return {"created": False, "reason": "thread_closed"}
+                if thread[2]:
+                    return {"created": False, "reason": "thread_paused"}
                 if thread[1] is not None and thread[1] > today_berlin():
                     return {"created": False, "reason": "review_not_due"}
                 cur.execute(
@@ -222,6 +242,17 @@ def create_suggestion(
                 if deferred is not None:
                     return {"created": False, "reason": "deferred", "suggestion_id": deferred[0]}
 
+            # Serialize identical creations even for general cards without a thread.
+            identity = occasion_key or content.strip().casefold()
+            cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                        (f"suggestion:{thread_id}:{identity}",))
+            if occasion_key is not None:
+                cur.execute("SELECT id FROM suggestions WHERE thread_id IS NOT DISTINCT FROM %s AND occasion_key = %s",
+                            (thread_id, occasion_key))
+                previous = cur.fetchone()
+                if previous:
+                    return {"created": False, "reason": "same_occasion", "suggestion_id": previous[0]}
+
             # Keine identischen Vorschläge wiederholen —
             # weder innerhalb eines Laufs noch über Läufe
             # hinweg, unabhängig vom Bearbeitungsstatus.
@@ -231,9 +262,11 @@ def create_suggestion(
                 FROM suggestions
                 WHERE thread_id IS NOT DISTINCT FROM %s
                   AND lower(trim(content)) = lower(trim(%s))
+                  AND (occasion_key IS NULL OR %s::text IS NULL OR occasion_key = %s
+                       OR status IN ('open', 'deferred'))
                 LIMIT 1
                 """,
-                (thread_id, content),
+                (thread_id, content, occasion_key, occasion_key),
             )
             duplicate = cur.fetchone()
             if duplicate is not None:
@@ -247,13 +280,13 @@ def create_suggestion(
                 """
                 INSERT INTO suggestions
                     (thread_id, run_id, content, reason,
-                     priority, suggested_date)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                     priority, suggested_date, kind, response_options, allow_free_text, occasion_key)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
                     thread_id, run_id, content, reason,
-                    priority, suggested_date,
+                    priority, suggested_date, kind, Jsonb(response_options), allow_free_text, occasion_key,
                 ),
             )
             return {
@@ -350,7 +383,16 @@ def update_suggestion_status(
     suggestion_id: int,
     status: str,
     deferred_until=None,
+    expected_revision: int | None = None,
+    source: str = "internal",
+    only_unhandled: bool = False,
+    reaction_reason: str | None = None,
 ) -> dict | None:
+    if only_unhandled and (source != "internal" or status != "dismissed" or not isinstance(reaction_reason, str)
+                           or not reaction_reason.strip() or len(reaction_reason) > 500):
+        raise ValueError("Eine interne Aufhebung benötigt eine kurze konkrete Begründung.")
+    if source not in ("ui", "api", "chat", "internal"):
+        raise ValueError("Ungültige Reaktionsquelle.")
     _validate_status(status)
     deferred_until = parse_date(deferred_until)
     if deferred_until is not None:
@@ -371,20 +413,62 @@ def update_suggestion_status(
                 thread = cur.fetchone()
                 if thread and thread[0] in ("completed", "archived") and status in ("open", "deferred"):
                     raise ValueError("Ein abgeschlossenes Vorhaben kann nicht wieder vorgelegt werden.")
-            cur.execute("SELECT status FROM suggestions WHERE id = %s FOR UPDATE", (suggestion_id,))
+            cur.execute("SELECT status, kind, revision, deferred_until FROM suggestions WHERE id = %s FOR UPDATE", (suggestion_id,))
             current = cur.fetchone()
             if current is None:
                 return None
+            if expected_revision is not None and current[2] != expected_revision:
+                from app.storage.suggestion_responses import SuggestionConflict
+                raise SuggestionConflict("Diese Meldung wurde inzwischen geändert. Bitte neu laden.")
+            if only_unhandled and current[0] not in ("open", "deferred"):
+                from app.storage.suggestion_responses import SuggestionConflict
+                raise SuggestionConflict("Diese Meldung wurde bereits bearbeitet.")
+            if status == "confirmed" and current[1] != "proposal":
+                raise ValueError("Bitte die passende Antwortfunktion für diese Meldung verwenden.")
             if status == "deferred" and current[0] not in ("open", "deferred"):
                 raise ValueError("Nur offene oder zurückgestellte Vorschläge können zurückgestellt werden.")
+            if current[0] == status and current[3] == deferred_until:
+                cur.execute(f"SELECT {COLUMNS} FROM suggestions WHERE id = %s", (suggestion_id,))
+                return _row_to_dict(cur.fetchone())
             cur.execute(
                 f"""
                 UPDATE suggestions
-                SET status = %s, deferred_until = %s, updated_at = NOW()
+                SET status = %s, deferred_until = %s, revision = revision + 1, updated_at = NOW()
                 WHERE id = %s
                 RETURNING {COLUMNS}
                 """,
                 (status, deferred_until, suggestion_id),
             )
             row = cur.fetchone()
-            return _row_to_dict(row) if row else None
+            if row and status in ("confirmed", "deferred", "dismissed"):
+                cur.execute("""INSERT INTO suggestion_reactions (suggestion_id, action, deferred_until, source, reason)
+                               VALUES (%s, %s, %s, %s, %s)""", (suggestion_id, status, deferred_until, source, reaction_reason))
+            result = _row_to_dict(row) if row else None
+            if result is not None and source == "internal" and status == "dismissed":
+                # RETURNING was evaluated before the audit insert above. Match the
+                # representation of the next read within the same atomic result.
+                result["obsolete_reason"] = reaction_reason
+            return result
+
+
+
+def list_recent_reactions(thread_id=None, limit=30):
+    """Read user reactions with their original context; never reactivate cards."""
+    if thread_id is not None and (type(thread_id) is not int or thread_id < 1):
+        raise ValueError("Ungültige Vorhaben-ID.")
+    if type(limit) is not int or not 1 <= limit <= 50:
+        raise ValueError("Limit muss zwischen 1 und 50 liegen.")
+    with get_connection() as conn:
+        rows = conn.execute("""SELECT s.id, s.thread_id, s.kind, s.content, s.reason, s.occasion_key,
+                                      r.action, r.response_text, r.source, r.created_at, r.deferred_until
+                               FROM suggestions s JOIN (
+                                 SELECT suggestion_id, action, NULL::text AS response_text, source, created_at, deferred_until
+                                 FROM suggestion_reactions WHERE source <> 'internal'
+                                 UNION ALL
+                                 SELECT suggestion_id, answer AS action, response_text, source, created_at, NULL::date AS deferred_until
+                                 FROM suggestion_responses
+                               ) r ON r.suggestion_id = s.id
+                               WHERE (%s::bigint IS NULL OR s.thread_id = %s)
+                               ORDER BY r.created_at DESC, s.id DESC LIMIT %s""", (thread_id, thread_id, limit)).fetchall()
+        return [dict(zip(("suggestion_id", "thread_id", "kind", "content", "reason", "occasion_key",
+                          "action", "answer_text", "source", "recorded_at", "deferred_until"), row)) for row in rows]

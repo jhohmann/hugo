@@ -158,3 +158,51 @@ def test_filtered_pages_and_read_only_dispatch(history, store):
 def test_invalid_time_filters(kwargs):
     with pytest.raises(ValueError):
         thread_events.list_thread_events_page(1, **kwargs)
+
+
+@pytest.mark.parametrize("changes", [
+    {"status": "completed"}, {"status": "archived"},
+    {"deadline": "2027-08-02"},
+    {"status": "completed", "priority": 5, "tags": ["arbeit"]},
+])
+def test_agent_decisions_rejected_atomically(history, changes):
+    tid = threads.create_thread("Offen", deadline="2027-07-01", tags=["privat"])
+    before = threads.get_thread(tid)
+    with pytest.raises(threads.ThreadDecisionRequired):
+        threads.update_thread(tid, agent_write=True, **changes)
+    assert threads.get_thread(tid) == before
+    assert len(history(tid)) == 1
+
+
+def test_initial_deadline_and_recommendations_remain_agent_writable(history):
+    tid = threads.create_thread("Offen")
+    threads.update_thread(tid, agent_write=True, deadline="2027-07-01")
+    result = threads.update_thread(tid, agent_write=True, deadline="2027-07-01", act_by="2027-06-01")
+    assert result["act_by"].isoformat() == "2027-06-01"
+
+
+def test_user_decision_audit_and_stale_form(history):
+    tid = threads.create_thread("Offen", waiting_for="Antwort")
+    sid = threads.get_thread(tid)["updated_at"]
+    result = threads.update_thread(tid, status="completed", user_decision=True, expected_updated_at=sid)
+    assert result["status"] == "completed" and result["waiting_for"] is None
+    assert history(tid)[-1]["origin"] == "user_decision"
+    assert history(tid)[-1]["changes"]["status"] == {"before": "proposed", "after": "completed"}
+    with pytest.raises(threads.ThreadConflict):
+        threads.update_thread(tid, deadline="2027-08-01", user_decision=True, expected_updated_at=sid)
+    assert threads.get_thread(tid) == result
+    assert len(history(tid)) == 2
+
+
+def test_concurrent_decisions_only_one_wins(history):
+    tid = threads.create_thread("Offen")
+    version = threads.get_thread(tid)["updated_at"]
+    def decide(status):
+        try:
+            threads.update_thread(tid, status=status, user_decision=True, expected_updated_at=version)
+            return "ok"
+        except threads.ThreadConflict:
+            return "conflict"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(decide, ["completed", "archived"])) == ["conflict", "ok"]
+    assert len(history(tid)) == 2

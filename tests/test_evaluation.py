@@ -32,6 +32,9 @@ def test_werkzeugliste_der_bewertung():
 
 @pytest.fixture
 def fake_storage(monkeypatch):
+    monkeypatch.setattr(evaluation, "latest_review_cursor", lambda: 0)
+    monkeypatch.setattr(evaluation, "list_thread_page", lambda **kw: {"threads": [], "total_count": 0, "has_more": False, "next_after_id": None})
+    monkeypatch.setattr(evaluation, "list_recent_reactions", lambda **kw: [])
     calls = {"finish_run": [], "create_run": []}
 
     def create_run(trigger="manual"):
@@ -163,3 +166,17 @@ def test_fehler_markiert_lauf_als_failed(
     assert "OpenAI nicht erreichbar" in (
         fake_storage["finish_run"][0]["error"]
     )
+
+
+def test_recent_reactions_reach_model_with_original_context(fake_storage, monkeypatch):
+    monkeypatch.setattr(evaluation, "list_recent_reactions", lambda **kw: [{"action": "dismissed", "content": "Stand klären", "occasion_key": "stand-offen"}])
+    captured = {}
+    def model(instructions, messages, tools, **kw):
+        captured["context"] = messages[0]["content"]
+        captured["instructions"] = instructions
+        return "Kein neuer Anlass."
+    monkeypatch.setattr(evaluation, "run_tool_loop", model)
+    evaluation._run_evaluation()
+    assert '"action": "dismissed"' in captured["context"]
+    assert "stand-offen" in captured["context"]
+    assert "keine neue" in captured["instructions"] or "keine solche Entwicklung" in captured["instructions"]

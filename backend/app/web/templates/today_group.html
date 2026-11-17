@@ -1,0 +1,21 @@
+<section class="today-group" aria-labelledby="{{ group_prefix }}-group-{{ group_number }}">
+  <header class="today-group-heading">
+    <h2 id="{{ group_prefix }}-group-{{ group_number }}">
+      {% if group.thread_id %}<a href="/ui/threads/{{ group.thread_id }}">{{ group.title or 'Vorhaben' }}</a>{% else %}Allgemein{% endif %}
+    </h2>
+    {% if group.count > 1 %}<span class="muted">{{ group.count }} Meldungen</span>{% endif %}
+  </header>
+  {% for s in group.cards %}
+  <article class="card suggestion{% if s.status == 'deferred' %} muted-card{% elif s.priority and s.priority >= 4 %} important{% endif %}">
+    <header class="suggestion-head">
+      {% if s.priority %}<span class="priority prio-{{ s.priority }}" title="Priorität {{ s.priority }} von 5">P{{ s.priority }}</span>{% endif %}
+      <span class="muted">{{ suggestion_kind_labels[s.kind|default('proposal')] }}</span>
+      {% if s.suggested_date %}<span class="date-hint {{ fmt.urgency_class(s.suggested_date) }}">{{ s.suggested_date|de_date }} ({{ fmt.relative_label(s.suggested_date) }})</span>{% endif %}
+    </header>
+    {% if s.status == 'deferred' %}<p class="date-hint">{% if s.deferred_until %}Zurückgestellt bis {{ s.deferred_until|de_date }}{% else %}Ohne Wiedervorlagedatum zurückgestellt{% endif %}</p>{% endif %}
+    <p class="suggestion-content">{{ s.content|source_links }}</p>
+    {% if s.reason %}<p class="suggestion-reason muted">{{ s.reason|source_links }}</p>{% endif %}
+    {% include "suggestion_actions.html" %}
+  </article>
+  {% endfor %}
+</section>

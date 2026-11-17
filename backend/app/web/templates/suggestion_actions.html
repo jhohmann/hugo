@@ -1,0 +1,53 @@
+{% set kind = s.kind|default('proposal') %}
+<footer class="actions suggestion-actions">
+  {% if kind == 'proposal' %}
+  <form method="post" action="/ui/suggestions/{{ s.id }}/answer">
+    <input type="hidden" name="next" value="{{ '/ui/threads/' ~ thread.id if thread is defined else today_return|default('/ui/heute') }}">
+    <input type="hidden" name="expected_revision" value="{{ s.revision|default(1) }}">
+    <input type="hidden" name="answer" value="accepted">
+    <button type="submit" class="button button-primary button-small">Bestätigen</button>
+  </form>
+  {% elif kind == 'status_check' %}
+  <form method="post" action="/ui/suggestions/{{ s.id }}/answer" class="actions">
+    <input type="hidden" name="next" value="{{ '/ui/threads/' ~ thread.id if thread is defined else today_return|default('/ui/heute') }}">
+    <input type="hidden" name="expected_revision" value="{{ s.revision }}">
+    {% for code, label in status_answers.items() %}
+    <button type="submit" class="button button-small" name="answer" value="{{ code }}">{{ label }}</button>
+    {% endfor %}
+  </form>
+  {% elif kind == 'question' %}
+  {% if s.response_options %}
+  <form method="post" action="/ui/suggestions/{{ s.id }}/answer" class="actions">
+    <input type="hidden" name="next" value="{{ '/ui/threads/' ~ thread.id if thread is defined else today_return|default('/ui/heute') }}">
+    <input type="hidden" name="expected_revision" value="{{ s.revision }}">
+    {% for option in s.response_options %}
+    <button type="submit" class="button button-small" name="answer" value="option:{{ loop.index0 }}">{{ option }}</button>
+    {% endfor %}
+  </form>
+  {% endif %}
+  {% if s.allow_free_text %}
+  <form method="post" action="/ui/suggestions/{{ s.id }}/answer" class="suggestion-reply">
+    <input type="hidden" name="next" value="{{ '/ui/threads/' ~ thread.id if thread is defined else today_return|default('/ui/heute') }}">
+    <input type="hidden" name="expected_revision" value="{{ s.revision }}">
+    <input type="hidden" name="answer" value="text">
+    <label for="reply-{{ s.id }}">Deine Antwort</label>
+    <textarea id="reply-{{ s.id }}" name="text" rows="2" maxlength="4000" required></textarea>
+    <button type="submit" class="button button-primary button-small">Antworten</button>
+  </form>
+  {% endif %}
+  {% endif %}
+  <form method="post" action="/ui/suggestions/{{ s.id }}">
+    <input type="hidden" name="next" value="{{ '/ui/threads/' ~ thread.id if thread is defined else today_return|default('/ui/heute') }}">
+    <input type="hidden" name="expected_revision" value="{{ s.revision|default(1) }}">
+    <input type="hidden" name="action" value="deferred">
+    <label for="defer-{{ s.id }}">Wieder anzeigen am</label>
+    <input id="defer-{{ s.id }}" type="date" name="deferred_until" value="{{ s.deferred_until or '' }}" required>
+    <button type="submit" class="button button-small">Zurückstellen</button>
+  </form>
+  <form method="post" action="/ui/suggestions/{{ s.id }}">
+    <input type="hidden" name="next" value="{{ '/ui/threads/' ~ thread.id if thread is defined else today_return|default('/ui/heute') }}">
+    <input type="hidden" name="expected_revision" value="{{ s.revision|default(1) }}">
+    <input type="hidden" name="action" value="dismissed">
+    <button type="submit" class="button button-danger button-small">Verwerfen</button>
+  </form>
+</footer>

@@ -170,7 +170,7 @@ Der Docker-Build übernimmt Anwendungscode, Migrationen und Laufzeitabhängigkei
 
 ## Bedienung
 
-Die Oberfläche unter `/ui` führt nach der Anmeldung zur Ansicht **Heute**. Inhaltliche Änderungen an Erinnerungen und Vorhaben erfolgen über den Chat.
+Die Oberfläche unter `/ui` führt nach der Anmeldung zur Ansicht **Heute**. Inhaltliche Änderungen an Erinnerungen und Vorhaben erfolgen über den Chat. Abschluss, Archivierung und Änderungen bestehender verbindlicher Fristen entscheidet der Nutzer direkt in der Vorhabenansicht.
 
 Das Reglersymbol rechts oben öffnet die [Einstellungen](#einstellungen-in-der-oberfläche)
 unter `/ui/settings` für Verbindungen, KI und tägliche Auswertungen.
@@ -203,13 +203,33 @@ unter `/ui/settings` für Verbindungen, KI und tägliche Auswertungen.
 
 `/ui/heute`
 
-- Offene Vorschläge mit Begründung, Priorität P1–P5, Datum und Vorhabenbezug.
+- Vorschläge, Statusabfragen und Rückfragen mit Begründung, Priorität P1–P5,
+  Datum und Vorhabenbezug. Jede Meldung bietet eine konkrete Reaktion.
+- Statusabfragen: **Bin dran**, **Pausiert**, **Erledigt**, **Kein Fortschritt**.
+  „Bin dran“ bestätigt den Stand, behauptet keinen Fortschritt. „Erledigt“
+  schließt das eindeutig zugehörige Vorhaben ausdrücklich ab.
+- Rückfragen: passende Auswahlantworten und gegebenenfalls Freitext. Frage und
+  Antwort bleiben als zugeordnetes Gespräch sichtbar und für Hugo abrufbar.
+- Projektpause unterdrückt neue Hinweise ohne erfundenes Wiederaufnahmedatum.
+  Unter **Vorhaben → Pause, Abschluss und Frist → Vorhaben fortsetzen**
+  lässt sich die Pause ausdrücklich beenden. Wartekontext und Hinweispause
+  bleiben davon getrennt.
 - Vorschläge bestätigen, zurückstellen oder verwerfen.
 - Beim Zurückstellen unter **Wieder anzeigen am** ein zukünftiges Datum wählen.
 - Zurückgestellte Vorschläge in einem einklappbaren Bereich.
+- Meldungen je Vorhaben gemeinsam anzeigen; allgemeine Meldungen bleiben einzeln.
+  Die Reihenfolge übernimmt Meldungspriorität und empfohlenes Datum. Es entsteht
+  keine zusätzliche Tageszusammenfassung oder zweite Vorschlagsliste.
+- Zehn Gruppen je Seite; **Weitere Meldungen** macht auch größere Bestände erreichbar.
+  Offene und zurückgestellte Meldungen haben getrennte Seiten (`page`, `deferred_page`).
+  Gesamtzahl und Navigationszähler zählen alle offenen Meldungen. Aktionen führen
+  zur gerade betrachteten Seite zurück; leere Restseiten werden abgefangen.
 - Letzten Auswertungslauf anzeigen und über **Jetzt auswerten** eine Auswertung starten.
 
-Vorschläge entstehen durch manuelle oder geplante Auswertungen. Beim Anzeigen werden sie als zugestellt markiert.
+Vorschläge entstehen durch manuelle oder geplante Auswertungen. Nur offene Karten
+der angezeigten Seite werden als zugestellt markiert. Das ist weder eine Antwort
+noch ein Fortschrittsbeleg. Navigation und zurückgestellte Seiten setzen keine
+Zustellung. Es gibt weiterhin kein festes Tagesbudget und keinen Push-Kanal.
 
 ### Vorhaben
 
@@ -228,6 +248,12 @@ Vorschläge entstehen durch manuelle oder geplante Auswertungen. Beim Anzeigen w
   Eine Unterhaltung kann mehrere Vorhaben behandeln; der eingeblendete Verlauf
   enthält dann auch andere Themen.
 - Wiedervorlage und **Wartet auf** für offene Rückmeldungen oder andere Voraussetzungen.
+- Unter **Pause, Abschluss und Frist** ein Vorhaben ausdrücklich pausieren, erledigen,
+  archivieren oder eine Frist setzen. Die Datumseingabe gilt bis zum Tagesende in
+  Europe/Berlin. Bereits gespeicherte genaue Fristen bleiben beim Öffnen unverändert;
+  Speichern eines Tages ersetzt sie bewusst durch dessen Tagesende.
+- Wurde das Vorhaben seit dem Öffnen verändert, wird die Entscheidung mit HTTP 409
+  abgewiesen. Neu laden und den aktuellen Stand prüfen; keine stillen Überschreibungen.
 
 Im Chat lässt sich beispielsweise „Warte auf das Angebot von Müller; nächste Woche
 wieder aufgreifen“ festhalten. Bei „Das Angebot ist da“ kann Hugo den Wartekontext
@@ -1044,6 +1070,27 @@ die Zuordnung unverändert. Suchen und Auflisten unterstützen den optionalen Fi
 
 Die Agentenwerkzeuge `search_threads`, `list_threads`, `get_thread`, `create_thread` und `update_thread` verwenden IDs aus vorherigen Such- oder Leseaufrufen. Updates verändern nur ausdrücklich mitgegebene Felder.
 
+Beschreibung und gegebenenfalls Deadline genügen zur Erfassung; fehlender Aufwand
+oder unbekannter Fortschritt bleiben unbekannt. Gemeinsame Modellanweisungen verbieten
+erfundene fachliche Unteraufgaben, auch in Beschreibungen oder als neue Vorhaben.
+`next_action` enthält nutzerseitige fachliche Schritte oder klar erkennbare Koordination.
+Diese inhaltliche Unterscheidung bleibt modellgeführt, ohne Schlüsselwortregeln.
+
+Technisch blockiert der Agentenpfad die Neuanlage abgeschlossener/archivierter Vorhaben
+und bei Updates `completed`/`archived` sowie das Ändern einer bereits vorhandenen
+Deadline. Die Prüfung erfolgt im Speicherpfad unter Zeilensperre vor allen Änderungen;
+auch weitere Felder desselben Aufrufs bleiben bei Ablehnung unverändert. Der Agent
+erhält `user_decision_required` mit Link auf die Vorhabenansicht. Eine erstmals vom
+Nutzer genannte Deadline und interne Empfehlungen wie `act_by` bleiben pflegbar;
+die Herkunft der erstmaligen Frist ist durch Modellanweisungen, nicht durch eine
+semantische Python-Prüfung abgesichert.
+
+Auch ein ausdrücklicher Chatauftrag zum Abschluss oder zur Fristverschiebung führt
+in dieser ersten Ausbaustufe zur direkten Nutzeraktion in der Vorhabenansicht.
+Das vermeidet eine vermeintliche Berechtigung durch ein vom Modell gesetztes
+Bestätigungsfeld. Es gibt keinen zusätzlichen Bestätigungsdialog für interne Pflege.
+Vorschläge bestätigen und Kalenderaktionen freigeben bleiben getrennte Vorgänge.
+
 ### Zeitleisten-Vorschau
 
 `/ui/zeitleiste` ist die Vorbereitung für eine grafische Vorhabenansicht.
@@ -1064,7 +1111,11 @@ bei einem Fehler gemeinsam zurückgerollt. Unveränderte Werte, Embeddings und
 Lesezugriffe erzeugen keine Ereignisse.
 
 Eine verknüpfte Quellnachricht kennzeichnet den Gesprächskontext; ohne sie ist
-die Herkunft interne Pflege. Das belegt keine ausdrückliche Nutzerbestätigung.
+die Herkunft normalerweise interne Pflege. Seit Migration `009_thread_decisions.sql`
+kennzeichnet `origin=user_decision` stattdessen eine direkte Nutzerentscheidung über
+den geschützten UI-Endpunkt. Dieser Herkunftswert ist kein Agentenargument; die
+Änderung und ihr Ereignis werden gemeinsam gespeichert. Eine bloße Herkunft
+`conversation` belegt weiterhin keine ausdrückliche Nutzerbestätigung.
 Beim Abschluss automatisch geleerte Wartefelder werden zusätzlich markiert.
 Das Protokoll beginnt mit Migration `005_thread_events.sql`; frühere Änderungen
 werden nicht aus dem aktuellen Zustand rekonstruiert. Direkte SQL-Änderungen
@@ -1112,7 +1163,8 @@ erfolgt durch das Modell, ohne feste Warnabstände oder Regeln für einzelne Leb
 
 Hugo soll interne Erinnerungen und Vorhaben ohne Speicherfreigabe pflegen und
 selbst entscheiden, wann ein Hinweis nützlich ist. Im Chat kann es begründete
-Handlungstermine (`act_by`) und nächste Schritte eigenständig aktualisieren.
+Handlungstermine (`act_by`) eigenständig aktualisieren; fachliche nächste Schritte
+stammen vom Nutzer, Koordination bleibt möglich.
 `act_by` ist eine revidierbare Empfehlung; frühere Hinweise bleiben möglich.
 `review_on` dient ausdrücklich gewünschtem Zurückstellen und soll nicht als
 automatisch gesetzte Warnschwelle verwendet werden. Rückfragen betreffen nur
@@ -1148,13 +1200,17 @@ Anlass zur Bewertung; das Modell entscheidet, ob ein konkreter Hinweis sinnvoll 
 
 ### Proaktive Auswertung
 
-Die Auswertung berücksichtigt offene Vorhaben, jüngste Erinnerungen und offene oder zurückgestellte Vorschläge. Sie verwendet lesende Werkzeuge und `create_suggestion` über den zentralen Agenten.
+Die Auswertung berücksichtigt offene Vorhaben, jüngste Erinnerungen und offene oder zurückgestellte Vorschläge. Sie verwendet lesende Werkzeuge, `create_suggestion` und die eng begrenzte Aufhebung
+überholter Meldungen über den zentralen Agenten.
 
-Der Startkontext enthält bis zu 50 offene Vorhaben einschließlich zurückgestellter
-Vorhaben: Auch diese können den Spielraum anderer Pläne einschränken. Ihre
-Hinweispause bleibt durch die Vorschlagsspeicherung geschützt. Weitere Angaben
-kann das Modell über lesende Werkzeuge ermitteln; `compute_date` steht auch hier
-zur Verfügung. Die Auswertung entscheidet bei jedem Lauf neu über Anlass,
+Der Startkontext kombiniert bis zu 50 nach bisherigen Zeit-/Prioritätsfeldern
+sortierte offene Vorhaben mit einer ID-geordneten Seite von bis zu 50 Vorhaben
+im fortlaufenden Prüfzyklus. Überschneidungen werden entfernt. Auch zurückgestellte
+und pausierte Vorhaben bleiben Kontext; ihre Hinweispause bleibt geschützt.
+`abdeckung` nennt tatsächliche Bestandsgröße und Umfang der Startauswahl. Das Modell
+kann mit `list_thread_page` weitere Seiten lesen; `compute_date` steht ebenfalls
+zur Verfügung. Die Auswahl ist keine fertige Dringlichkeitsentscheidung und bei
+mehr als 100 Vorhaben kein vollständiger Überblick in jedem einzelnen Lauf. Die Auswertung entscheidet bei jedem Lauf neu über Anlass,
 Zeitpunkt und Priorität eines Vorschlags, auch ohne vorhandenes `act_by` oder
 `preparation_weeks`. Sie verändert weiterhin keine Vorhaben oder Erinnerungen.
 
@@ -1171,6 +1227,104 @@ Zeitpunkt und Priorität eines Vorschlags, auch ohne vorhandenes `act_by` oder
 | Bearbeitung | `open`, `confirmed`, `deferred`, `dismissed` |
 
 Exakt normalisierte Vorschläge werden pro Vorhaben über Auswertungsläufe und Bearbeitungsstatus hinweg dedupliziert. Umformulierungen können erneut erscheinen.
+
+Migration `013_evaluation_coverage.sql` speichert dafür `evaluation_runs.review_cursor`.
+Nur ein erfolgreich abgeschlossener Lauf verschiebt den Zyklus. Fehlgeschlagene
+Läufe behalten den letzten erfolgreichen Cursor; eine leere Restseite durch
+inzwischen geschlossene/gelöschte Vorhaben springt an den Anfang zurück. Beide
+Startquellen sind reine Datenbankabfragen. Die ID-Rotation verhindert dauerhaftes
+Auslassen durch dieselbe Top-50-Auswahl, garantiert jedoch keine Modellaufmerksamkeit
+für jedes einzelne Vorhaben und keine vollständige tägliche Prüfung sehr großer
+Bestände. Das bleibt im Betrieb zu beobachten.
+
+### Typisierte Meldungen und Antworten
+
+Migration `010_typed_suggestions.sql` ergänzt `kind=proposal|status_check|question`,
+`response_options`, `allow_free_text` und eine Bearbeitungsrevision. Altbestand und
+Aufrufe ohne Typ bleiben Vorschläge. Statusabfragen benötigen beim Anlegen ein
+bekanntes Vorhaben. Rückfragen haben bis zu sechs eindeutige kurze Auswahltexte
+und/oder Freitext; Modelltexte sind Beschriftungen, niemals ausführbare Aktionen.
+Reine Informationen sind durch die gemeinsamen Modellanweisungen ausgeschlossen.
+
+Der neue Antwortpfad speichert `suggestion_responses` mit Meldungsbezug, Antwort,
+Quelle (`ui`/`api`), Nutzer-Nachricht und Erfassungszeit. Frage und Antwort bilden
+eine eigene Unterhaltung mit Vorhabenbezug. Es wird kein zusätzlicher Modellaufruf
+beim Klicken ausgelöst; Hugo kann den Kontext mit `list_thread_responses` im Chat
+und bei Auswertungen gezielt lesen. Eine inhaltliche Freitextinterpretation ist
+modellgeführt, keine Python-Schlüsselwortlogik.
+
+Die Schreibreihenfolge ist Vorhaben vor Meldung. Derselbe erneut gesendete Antwortwert
+liefert den bereits gespeicherten Erfolg; eine abweichende zweite Antwort oder eine
+veraltete Revision ergibt 409. „Erledigt“ speichert Antwort, Vorhabenabschluss und
+Ereignis in derselben Transaktion. Ein Fehler rollt auch die Gesprächsanlage zurück.
+Allgemeines Bestätigen über den alten Statusendpunkt ist für Fragen ausgeschlossen;
+der alte Vorschlags-/Wiedervorlagepfad bleibt kompatibel. Legacy-Statuswechsel
+enthalten weiterhin keine inhaltliche Antwortaufzeichnung wie der neue Antwortpfad.
+Eine angenommene Empfehlung verändert keinen Kalender.
+
+Migration `011_thread_observations.sql` ergänzt voneinander getrennt:
+
+| Feld | Bedeutung |
+| --- | --- |
+| `paused` | Ausdrückliche Projektpause, unabhängig von `waiting` und `review_on` |
+| `last_progress_on` | Vom Nutzer berichteter tatsächlicher Fortschrittstag; unbekannt bleibt NULL |
+| `progress_recorded_at` | Zeitpunkt der Erfassung dieses Fortschritts |
+| `last_confirmed_at` | Letzte ausdrückliche Statusantwort, kein Fortschrittsbeleg |
+| `last_response_at` | Letzte Antwort über den neuen Meldungsantwortpfad |
+| `last_hint_at` | Aus Meldungen abgeleitete letzte Erstellungszeit, kein Zustellungsnachweis |
+
+Es gibt keine rückwirkende Befüllung aus `updated_at`. Statusantworten bestätigen
+nur den Stand; weder „Bin dran“ noch „Kein Fortschritt“ setzen Fortschrittsdaten.
+Das Chatwerkzeug `record_thread_progress` benötigt eine vorhandene Nutzernachricht
+und einen nicht zukünftigen Fortschrittstag. Ob der Inhalt tatsächlich Fortschritt
+belegt, entscheidet weiterhin das Modell. Die Auswertung hat dieses Schreibwerkzeug
+nicht. Änderungen bleiben im vorhandenen Ereignisprotokoll nachvollziehbar.
+
+Bei Projektpause werden andere offene/vertagte Hinweise zu diesem Vorhaben verworfen;
+alle Meldungstypen sind bis zum ausdrücklichen Fortsetzen gesperrt. Das Vorhaben bleibt
+als Kontext in der offenen Bestandsauswertung enthalten. Fortsetzen löscht keine
+unabhängige Hinweispause (`review_on`) und erfindet keinen Fortschritt. Die
+Vorhabendetailseite zeigt bekannte Fortschritts-/Bestätigungsdaten beziehungsweise
+„Unbekannt“ sowie die ausdrücklich gesetzte Pause.
+
+### Reaktionen und Anlassidentität
+
+Migration `012_suggestion_reactions.sql` ergänzt einen optionalen `occasion_key`
+und unveränderliche Reaktionsbelege für Bestätigen, Zurückstellen und Verwerfen.
+UI, API und Chat setzen die Herkunft serverseitig; interne Bereinigungen gelten
+nicht als Nutzerreaktion. Gleichartige wiederholte Statusaufrufe erzeugen keinen
+zweiten Reaktionsbeleg. Frühere Reaktionen werden nicht aus heutigen Statuswerten
+rekonstruiert. Bestehende typisierte Antworten bleiben in `suggestion_responses`.
+
+`list_recent_reactions` liest höchstens 50 Reaktionen samt ursprünglichem Text,
+Begründung, Vorhaben und Zeitbezug, ohne Wiedervorlagen zu öffnen. Die Auswertung
+bekommt die jüngsten 30 und kann bei Bedarf gezielt nachlesen. Eine einzelne
+Ablehnung wird nicht als dauerhafte Präferenz gespeichert; der zentrale Agent
+beurteilt ausdrückliche Korrekturen und wiederholt belegte Muster im Kontext.
+
+Ein normalisierter Anlassschlüssel ist über Läufe und Meldungstypen hinweg pro
+Vorhaben eindeutig, bei allgemeinen Meldungen ebenfalls. Er verhindert eine
+umformulierte Wiederholung desselben Anlasses auch nach Ablehnung. Transaktionale
+Sperren schützen zusätzlich parallele Neuanlagen ohne Vorhaben. Altkunden ohne
+Schlüssel behalten die Textdeduplizierung. Bei einem tatsächlich neuen Anlass kann
+ein anderer Schlüssel nach Bearbeitung eine erneut sinnvolle Handlung abbilden;
+bestehende offene/vertagte identische Texte werden weiterhin nicht verdoppelt.
+
+Migration `014_obsolete_suggestions.sql` ergänzt eine konkrete Begründung für
+interne Aufhebungen. Das eng begrenzte Werkzeug `dismiss_obsolete_suggestion` darf
+nur offene/vertagte Meldungen mit aktueller Revision beenden, wenn die Frage
+inzwischen beantwortet oder der Anlass belegbar entfallen ist. Bereits beantwortete
+Nutzerentscheidungen bleiben geschützt. Die Begründung bleibt im Reaktionsprotokoll
+mit Herkunft `internal` und in der Vorhabendetailansicht sichtbar. Sie wird nicht als
+Nutzerablehnung oder Präferenz an das Modell zurückgereicht. Das Werkzeug verändert
+keine Vorhaben, Fristen oder Kalender und darf eine Hinweispause nicht umgehen.
+
+Die fachliche Identität und die Begründung einer neuen Entwicklung stammen vom
+Modell. Python validiert und dedupliziert den Schlüssel, beweist aber weder die
+semantische Gleichheit noch die behauptete Sachänderung. Prompt und Reaktionskontext
+verbieten wechselnde Zufalls-/Tages-Schlüssel zur Umgehung. Reale Wiederholungsqualität
+und Präferenzlernen bleiben gesondert zu beobachten; technische Deduplizierung
+ist kein allgemeiner Qualitätsnachweis.
 
 ### Kalender und Freigaben
 
@@ -1260,6 +1414,7 @@ Nach der Anmeldung stehen `/docs`, `/redoc` und `/openapi.json` zur Verfügung. 
 
 | Methode | Route | Zweck |
 |---|---|---|
+| POST | `/suggestions/{id}/answer` | Typabhängige ausdrückliche Antwort |
 | POST | `/proactivity/evaluate` | Manuelle Auswertung (Sitzung + Origin) |
 | POST | `/internal/proactivity/evaluate` | Geplanter Tick (separates Bearer-Token, am Proxy gesperrt) |
 | GET | `/proactivity/runs` | Auswertungsprotokoll |
@@ -1267,6 +1422,18 @@ Nach der Anmeldung stehen `/docs`, `/redoc` und `/openapi.json` zur Verfügung. 
 | PATCH | `/suggestions/{id}` | Bestätigen, zurückstellen oder verwerfen |
 
 Zurückgegebene ausstehende Vorschläge werden als `surfaced` markiert.
+
+Typabhängige Antwort:
+
+```json
+{"answer": "in_progress", "expected_revision": 1}
+```
+
+Für Vorschläge gilt `answer=accepted`, für Statusabfragen `in_progress`, `paused`,
+`completed` oder `no_progress`. Rückfragen verwenden `option:0` usw. oder
+`answer=text` mit `text` (maximal 4000 Zeichen), sofern Freitext erlaubt ist.
+Die aktuelle `revision` kommt aus der Meldungsliste. Wiederholte identische Antworten
+sind idempotent; abweichende oder veraltete Antworten ergeben 409.
 
 Datiertes Zurückstellen:
 
@@ -1292,11 +1459,19 @@ Das Datum muss in der Zukunft liegen. Bei anderen Statuswerten ist
 | Methode | Routen |
 |---|---|
 | POST | `/ui/login`, `/ui/logout`, `/ui/chat`, `/ui/evaluate` |
-| POST | `/ui/suggestions/{id}`, `/ui/calendar-actions/{id}` |
+| POST | `/ui/suggestions/{id}`, `/ui/suggestions/{id}/answer`, `/ui/calendar-actions/{id}` |
 | POST | `/ui/kalender/disconnect` |
+| POST | `/ui/threads/{id}/decision` (direkte Nutzerentscheidung, kein Agentenwerkzeug) |
 | GET, POST | `/ui/settings` (anzeigen, speichern oder auf Servervorgaben zurücksetzen) |
 | POST | `/ui/settings/calendar-check` (lesender Kalenderzugriffstest) |
 | GET | `/ui/kalender/auth/start`, `/ui/kalender/auth/callback` |
+
+Der Vorhaben-Entscheidungsendpunkt erwartet Formulardaten: `action=completed`,
+`archived`, `pause`, `resume` oder `deadline`, den geladenen ISO-Zeitstempel `expected_updated_at`
+mit Zeitzone und bei `deadline` ein Datum `YYYY-MM-DD`. Nur die gewählte Änderung
+wird übernommen. Er benötigt dieselbe Sitzung und Origin-Prüfung wie andere
+UI-Schreibzugriffe. Veralteter Stand ergibt 409, ungültige Angaben 400, unbekanntes
+Vorhaben 404, Erfolg eine 303-Weiterleitung. Er verändert keine Kalendertermine.
 
 ### Fehler und Begrenzungen
 
@@ -1412,6 +1587,176 @@ Verkleinern, Chatende, Radien sowie ein separat verkleinertes/verschobenes
 mit Beispieldaten ohne Backend-, Datenbank- oder Modellzugriff. Screenshots liegen
 lokal unter `logs/chat-*.png`. Eine echte Bildschirmtastatur unter iOS/Android ist
 damit noch nicht verifiziert; nächster Praxisschritt ist eine Probe am Handy.
+
+### Entscheidungsgrenzen am 17.11.2026
+
+Schritt 1 aus [NEXT.md](NEXT.md) ist im Code umgesetzt; die vollständige
+Produkt-/Betriebsabnahme steht aus. Geprüft mit Python 3.12 in einer temporären
+Entwicklungsumgebung:
+
+- Werkzeug- und Auswertungstests: 40 bestanden. Darunter unzulässige
+  Agentenabschlüsse, atomare Ablehnung gemischter Änderungen vor dem ersten
+  Schreibstatement, veraltete Formularstände und ein simuliertes Modell,
+  das in einer Auswertung ein nicht angebotenes Schreibwerkzeug aufzurufen versucht.
+- Web, Authentifizierung, Ereignisse, Migrationen, Wiedervorlagen, Referenzen und
+  Gesprächskontext: 124 bestanden, 29 wegen nicht erreichbarem PostgreSQL
+  übersprungen. Die erfolgreichen HTTP-Tests verwenden simulierte Speicherung
+  und prüfen direkte Nutzeraktionen, begrenzte Felder, Berliner Tagesende nach
+  Sommerzeitwechsel, Eingabefehler, Konflikte, Anmeldung und Origin-Schutz.
+  Der HTTP-Testclient hing innerhalb der Sandbox; außerhalb lief er durch.
+- Neue PostgreSQL-Tests für Ereignisherkunft, unveränderte Daten bei Ablehnung
+  und konkurrierende Entscheidungen sind vorbereitet, aber hier nicht ausgeführt.
+  `009_thread_decisions.sql` erweitert ausschließlich den zulässigen Ursprung
+  bestehender Ereignisse; keine bestehenden Migrationen geändert und keine
+  Anwendungsdatenbank migriert. Lokaler Docker-Zugriff war nicht verfügbar.
+- Keine echten Modellaufrufe, Kalenderänderungen, visuelle Browserabnahme oder
+  Proxmox-Prüfung. Inhaltliche Einhaltung (keine erfundenen Schritte und keine
+  unnötigen Erfassungsfragen) ist durch Anweisungen vorbereitet, noch nicht durch
+  Modellbeobachtung belegt. Keine lokale `.env` für eine Live-Probe vorhanden.
+
+Nachprüfung am selben Tag: Eine ausschließlich unter `/tmp` gestartete PostgreSQL-
+18.6-Instanz mit pgvector 0.8.7, UTF-8 und eigenem Unix-Socket ermöglichte die zuvor
+fehlenden Datenbankprüfungen. 43 Ereignis-/Migrations-/Wiedervorlagetests bestanden;
+zwei weitere Chromium-Prüfungen für Desktop/Smartphone bestanden ebenfalls. Dabei
+wurde die Vorhabenansicht visuell geprüft. Ein zuvor unvollständig isolierter
+Kalender-Zähler im Testfixture wurde an die Wegwerf-Datenbank gebunden. Keine
+vorhandene Anwendungsdatenbank, Systeminstallation oder Docker-Volumes verändert.
+Diese PostgreSQL-18-Probe ersetzt keinen Nachweis mit PostgreSQL 17 im Docker-Ziel.
+
+Die technische Prüfung erlaubt die unabhängige lokale Weiterentwicklung der
+Meldungsantworten. Echte Modellqualität und Proxmox bleiben separate Abnahmegrenzen;
+Schritt 1 ist deshalb noch nicht vollständig produktseitig abgenommen. Updates
+wenden neue Migrationen über den bestehenden Migrationsstart an; keine Volumes
+zurücksetzen. Auf Proxmox separat verifizieren.
+
+### Meldungsantworten und Beobachtungsdaten am 17.11.2026
+
+Schritte 2 und 3 aus NEXT sind technisch umgesetzt. Ein gezielter Lauf mit echten,
+kurzlebigen PostgreSQL-Datenbanken bestand 155 Tests (Meldungsantworten, Ereignisse,
+Migrationen, Wiedervorlagen, Werkzeuge, Web und Auswertung). Abgedeckt sind unter
+anderem doppelte und konkurrierende Antworten, Rollback des gesamten Abschlusses,
+Frage-/Antwortbezüge, unbekannter Fortschritt, unabhängige Projektpause und explizite
+Wiederaufnahme. Vier Chromium-Proben mit simuliertem Speicher bestanden auf Desktop
+und Smartphone: Frist-/Abschlussaktionen sowie Statusauswahl und Freitextantwort.
+Die mobile Meldungsansicht wurde zusätzlich visuell geprüft. Browserproben sind
+unter `tests/test_thread_decision_browser.py` mit `HUGO_BROWSER_TESTS=1` aktivierbar;
+`HUGO_BROWSER_EXECUTABLE` wählt den lokalen Chromium-Pfad, `HUGO_BROWSER_ARTIFACTS`
+ein optionales Screenshot-Verzeichnis. Keine echten Kalender- oder Modellaufrufe.
+
+Ein erster vollständiger Offline-Testlauf bestand 377 Tests, übersprang 12 und
+scheiterte in 23 Fällen: 22 mangels lokalem Embedding-Modell, einer wegen einer
+historisch veralteten Erwartung (bestätigte Vorschläge dürfen bereits seit der
+Wiedervorlagenlogik nicht zurückgestellt werden). Die Erwartung wurde berichtigt;
+das öffentliche bestehende Embedding-Modell wird für eine erneute lokale Prüfung
+separat nach `/tmp` geladen. Der anschließende Gesamtlauf mit dem lokalen Modell und einer eigens migrierten
+Wegwerf-Datenbank bestand **400 Tests**, 12 optionale Prüfungen wurden übersprungen
+(Browser-Opt-in und Docker). Die vier oben genannten Chromium-Proben liefen separat.
+Echte Modell-/Kalenderaufrufe wurden dadurch nicht nachgewiesen.
+
+Modellproben mit realem Zugang, längerfristige Reaktionsqualität, Proxmox, der
+Host-Timer und externe Kalenderabläufe bleiben ungeprüft. Keine Produktivmigration
+und kein Deployment vorgenommen.
+
+### Reaktionen und Bestandsabdeckung am 17.11.2026
+
+Nach Schritt 4 bestand der vollständige Offline-Regressionslauf **407 Tests**,
+12 optionale Prüfungen übersprungen. Darunter eine echte Upgrade-Probe von Schema 009
+auf die typisierten Meldungen: alter Text, Status, Daten und Zeitstempel blieben
+unverändert; neue Fortschrittsfelder blieben unbekannt. Neue Anlassprüfungen decken
+Umformulierungen nach Ablehnung, einen belegten neuen Anlass mit derselben Handlung,
+parallele allgemeine Neuanlagen und rein lesenden Reaktionsabruf ab. Zwei echte
+Datenbank-Auswertungsläufe mit simuliertem Modell erzeugten nach Ablehnung keine
+zweite Meldung mit demselben Anlass. Das beweist den technischen Schutz, nicht die
+freie semantische Schlüsselwahl eines echten Modells.
+
+Die anschließende Bestandsabdeckung bestand 38 gezielte Prüfungen. Ein realer
+PostgreSQL-Fall mit 123 Vorhaben deckt über drei erfolgreiche Auswertungen alle
+Vorhaben ab; ein nach den vorhandenen Zeitfeldern vordringliches Vorhaben blieb
+zusätzlich in jedem Lauf im Kontext. Fehlgeschlagene Auswertung und geschlossene
+Restseiten wurden separat geprüft. Gemeinsame Auswertungssperre und Tagessteuerung
+blieben in den Tests wirksam. Der anschließende vollständige Offline-Gesamtlauf bestand **410 Tests**, 12 optionale Prüfungen übersprungen.
+
+`scripts/check_proactive_planning.py` bereitet fünf begrenzte Modellproben mit
+synthetischem Bestand vor: unbekannter Stand, Projektpause, fehlender Aufwand,
+unverändert abgelehnter Anlass und fehlender Kalenderzugriff. Es verarbeitet nur
+simulierte Fachwerkzeuge, schreibt keine Vorhaben/Kalender und führt beim Import
+nichts aus. `--case` wählt genau einen Fall; `--dry-run` zeigt den Bestand ohne
+Modellaufruf. Ohne Dry-Run verwendet es den konfigurierten Anbieter mit höchstens
+fünf Runden und 1800 Ausgabetokens je Runde; die üblichen Modellkosten können anfallen.
+Eine erfolgreiche Einzelprobe ersetzt keine längere Qualitätsbeobachtung.
+
+Lokale Wiederherstellungsprobe desselben Stands: `pg_dump` im Custom-Format und
+`pg_restore --exit-on-error` in eine neue zufällig benannte Datenbank der isolierten
+PostgreSQL-18-Instanz. Alle 22 öffentlichen Tabellen wurden nach Zeilenzahl und
+Inhaltsfingerabdruck verglichen, ebenso alle Sequenzstände. Die Migrationsprüfung
+übersprang unverändert alle 13 Migrationen. Eine eigens erzeugte synthetische
+Statusantwort, Projektpause und unbekannter Fortschritt blieben erhalten. Zieldatenbank
+und erzeugte Quelldatensätze wurden anschließend entfernt. Das prüft den lokalen
+Datenweg, nicht Proxmox, Docker-Volumes, betriebliche Aufbewahrung oder Notfallzugriff.
+Der spätere Schritt 014 ist durch diese vorherige Restore-Probe noch nicht abgedeckt.
+
+### Abschließender lokaler Prüfstand am 17.11.2026
+
+Der Stand bis einschließlich Migration `014_obsolete_suggestions.sql` bestand den
+vollständigen Offline-Regressionslauf mit **411 bestandenen Tests** und 14
+übersprungenen optionalen Browser-/Docker-Prüfungen. Die sechs neuen Chromium-
+Prüfungen wurden separat aktiviert und bestanden ebenfalls: vier UI-Proben mit
+simuliertem Speicher sowie zwei echte End-to-End-Proben mit `python -m app.dev`,
+Migration, Passwortanmeldung, Sitzung und Wegwerf-PostgreSQL auf Desktop/Smartphone.
+Statusantwort, Projektpause, explizites Fortsetzen, Abschluss und Freitext wurden
+im Browser ausgelöst und anschließend in der echten Datenbank überprüft.
+Die temporären API-Prozesse wurden danach beendet. Screenshots liegen nur unter
+`/tmp/hugo-browser-artifacts`; die mobile echte Meldungsansicht wurde visuell geprüft.
+
+Alle fünf Fälle von `check_proactive_planning.py` bestanden ihren Dry-Run. Für echte
+Modellproben fehlt hier ein konfigurierter Zugang; keine API-Schlüssel oder persönlichen
+Modellregistrierungen wurden gesucht oder ausgegeben. Proxmox-/PostgreSQL-17-/Docker-
+Abnahme, Host-Timer, PSS und reale Kalenderabläufe bleiben offen. Schritt 6 erweitert
+die Zustellung daher noch nicht. Die neuen Migrationen wurden ausschließlich in den
+isolierten Testdatenbanken angewendet; kein Produktivdeployment vorgenommen.
+
+Anschließende Konsistenzprüfung: Eine idempotent wiederholte Meldungsantwort liefert
+nun auch dieselbe `conversation_id` wie der erste Erfolg. Eine interne Aufhebung
+liefert ihre protokollierte Begründung unmittelbar im Rückgabewert, entsprechend dem
+folgenden Lesezugriff. 77 gezielte Antwort-/Datenbank-/HTTP-Regressionen bestanden
+nach diesen Korrekturen; dafür war keine weitere Migration nötig. Modellzugang und
+Zielkonfiguration waren bei erneuter Prüfung weiterhin nicht vorhanden.
+
+
+### Heute-Bündelung am 17.11.2026
+
+Nutzerfestlegung nach den vorigen Prüfungen: Die Modellzugänge können als geprüft
+angenommen werden; auf dieser Entwicklungsmaschine ist bewusst kein Modellzugang
+integriert. Die Zugangsprüfung ist damit für die weitere Entwicklung übernommen
+und kein Blocker. Das dokumentiert eine Nutzerangabe, keinen hier ausgeführten
+Live-Modelllauf. Qualitative Ergebnisse werden bei verfügbarer Laufzeitumgebung
+weiter beobachtet; dafür wird keine neue Zugangseinrichtung auf diesem Rechner verlangt.
+
+Der lokale Teil von Schritt 6 ist umgesetzt: `backend/app/storage/today.py` lädt
+Gruppen, Titel und Karten gebündelt ohne einzelne Datenbankabfrage je Vorhaben.
+Es übernimmt vorhandene Prioritäten, sortiert anschließend nach empfohlenem Datum
+und stabilen Erstellungsdaten und erfindet keine neue Dringlichkeitsbewertung.
+Offene und zurückgestellte Meldungen werden getrennt nach Gruppen paginiert. Alle
+Karten einer geladenen Gruppe bleiben mit ihren typabhängigen Antworten sichtbar.
+Zustellung wird nur für die offene geladene Seite fortgeschrieben. Der allgemeine
+Navigationszähler ist jetzt ebenfalls rein lesend und nicht auf 500 begrenzt.
+Dafür sind weder Modellaufrufe noch neue Migrationen oder Hintergrundprozesse nötig.
+
+78 gezielte Datenbank-/Web-/Wiedervorlage-/Zeitleistenprüfungen bestanden nach
+Korrektur einer Jinja-Kontextübergabe. Darunter: drei Meldungstypen in einem Vorhaben,
+unabhängige allgemeine Karten, vollständige Seitenerreichbarkeit, unveränderte
+Fortschrittsdaten beim Anzeigen und ein Bestand mit 503 Karten ohne 200er-Abschneidung.
+Der vollständige Offline-Regressionslauf bestand **420 Tests**, 14 optionale
+Browser-/Docker-Prüfungen übersprungen. Alle sechs separat aktivierten Chromium-
+Proben bestanden. Die echten app.dev-Proben prüfen jetzt zusätzlich das Blättern
+zu Seite 2, ihre Zustellung und eine dortige Antwort samt Rücksprung. Die mobile
+Ansicht mit echtem Server und Datenbank wurde visuell geprüft.
+
+Ein Tageslimit von drei Meldungen bleibt unbeschlossen. Zusätzliche Zustellkanäle
+und häufigere spontane Auslöser sind separate weitere Schritte. Es wurde kein
+Push-/Maildienst angebunden und kein Produktivdeployment vorgenommen. Proxmox-
+Betrieb und konkrete Kalender-/Modellqualität sind durch diese lokalen Tests
+weiterhin nicht neu nachgewiesen.
 
 ### Automatisierte Tests
 
@@ -1659,6 +2004,7 @@ python scripts/check_google_calendar.py
 | `check_google_calendar.py` | Liest `credentials.json`, schreibt `token.json` und listet Termintitel |
 | `check_web_research.py` | Öffentliche Romaniacs-Frage über Hugos Recherchepfad; keine DB-/Kalenderwerkzeuge, echte API-Kosten |
 | `check_chat_context.py` | Verdichtung und Faktenabruf mit erfundenem Verlauf, Korrekturen und relativen Daten; prüft Cache-Wiederverwendung, keine DB-/Kalenderzugriffe, echte API-Kosten |
+| `check_proactive_planning.py --case paused --dry-run` | Synthetische proaktive Prüffälle; Dry-Run ohne Modell, sonst begrenzter echter Aufruf mit simulierten Werkzeugen |
 | `check_chat_focus.py` | Zwei Modellproben für kurze Zeitplanung und Terminkonflikte mit erfundenen Werkzeugdaten; keine DB-/Kalenderzugriffe, echte API-Kosten |
 
 Begrenzten Webrecherche-Live-Test im Projektordner ausführen:
@@ -1705,7 +2051,7 @@ Fehlerberichte: [GitHub Issues](https://github.com/jhohmann/hugo/issues).
 - Erinnerungsupdates nur für den Status `proposed`.
 - Ereignis-, Handlungs- und Deadline-Felder lassen sich über Agentenwerkzeuge nicht leeren.
 - Semantisch ähnliche Vorschläge können trotz exakter Duplikatprüfung erneut erscheinen.
-- Begrenzte Listen ohne vollständige Seitennavigation.
+- Einige API-/Vorhabenlisten bleiben begrenzt; „Heute“ bietet vollständige Gruppenseiten.
 - Keine automatischen Gesprächstitel und keine Push-Benachrichtigungen.
 - Paketversionen sind teilweise nicht festgelegt; Builds sind nicht bitgenau reproduzierbar.
 - Proxmox-Betrieb, Wiederherstellung und externe Kalenderabläufe benötigen Prüfungen in der jeweiligen Zielumgebung.

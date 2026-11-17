@@ -4,6 +4,8 @@ Laufen ohne Datenbank und ohne OpenAI-Zugriff:
 Die Storage-Funktionen werden ersetzt (monkeypatch).
 """
 
+from datetime import datetime, timezone
+
 import pytest
 
 from app.agent import assistant
@@ -169,6 +171,7 @@ def test_update_thread_nur_explizite_felder(fake_storage):
     assert kwargs == {
         "status": "active",
         "source_message_id": 1,
+        "agent_write": True,
     }
     assert result["updated"] is True
 
@@ -199,6 +202,7 @@ def test_update_thread_nur_act_by(fake_storage):
     assert kwargs == {
         "act_by": "2027-01-15",
         "source_message_id": 1,
+        "agent_write": True,
     }
 
 
@@ -260,6 +264,7 @@ def test_update_thread_mit_blocked_reason_und_preparation_weeks(fake_storage):
         "blocked_reason": "Warte auf Rückmeldung",
         "preparation_weeks": 8,
         "source_message_id": 1,
+        "agent_write": True,
     }
     assert result["updated"] is True
 
@@ -500,3 +505,88 @@ def test_event_range_validierung():
         date(2027, 6, 10), date(2027, 6, 20)
     )
     thread_storage._validate_event_range(None, None)
+
+
+@pytest.mark.parametrize("status", ["completed", "archived"])
+def test_agent_cannot_create_closed_thread(fake_storage, status):
+    result = assistant.execute_tool("create_thread", {"title": "Projekt", "status": status})
+    assert result["reason"] == "user_decision_required"
+    assert "create_thread" not in fake_storage
+
+
+def test_decision_required_is_explicit_and_not_partially_applied(monkeypatch):
+    def guarded(*args, **kwargs):
+        assert kwargs["agent_write"] is True
+        assert "user_decision" not in kwargs  # Never trust an extra model argument.
+        raise thread_storage.ThreadDecisionRequired()
+    monkeypatch.setattr(assistant, "update_thread", guarded)
+    result = assistant.execute_tool("update_thread", {
+        "thread_id": 7, "status": "completed", "priority": 5, "user_decision": True,
+    }, source_message_id=42)
+    assert result["updated"] is False
+    assert result["decision_url"] == "/ui/threads/7#entscheidung"
+
+
+@pytest.mark.parametrize("changes,exception", [
+    ({"status": "completed", "priority": 5, "tags": ["arbeit"]}, thread_storage.ThreadDecisionRequired),
+    ({"status": "archived"}, thread_storage.ThreadDecisionRequired),
+    ({"status": "completed", "expected_updated_at": datetime(2026, 1, 1, tzinfo=timezone.utc)}, thread_storage.ThreadConflict),
+    ({"deadline": "2027-08-01", "clear_fields": ["waiting_for"]}, thread_storage.ThreadDecisionRequired),
+])
+def test_storage_blocks_protected_agent_changes_before_any_mutation(monkeypatch, changes, exception):
+    from contextlib import contextmanager
+    from datetime import datetime, timezone
+    now = datetime(2026, 11, 17, tzinfo=timezone.utc)
+    row = (7, "Projekt", None, "active", 2,
+           datetime(2027, 7, 1, tzinfo=timezone.utc), None, None, "exact",
+           None, None, None, None, None, now, now, ["privat"], None, "Antwort", False, None, None, None, None, None)
+    statements = []
+    class Cursor:
+        def execute(self, query, *args):
+            statements.append(query)
+        def fetchone(self):
+            return row
+    @contextmanager
+    def open_cursor():
+        yield Cursor()
+    class Connection:
+        cursor = staticmethod(open_cursor)
+    @contextmanager
+    def connect():
+        yield Connection()
+    monkeypatch.setattr(thread_storage, "get_connection", connect)
+    monkeypatch.setattr(thread_storage, "register_vector", lambda _: None)
+    with pytest.raises(exception):
+        thread_storage.update_thread(7, agent_write=True, **changes)
+    assert len(statements) == 1
+    assert statements[0].startswith("SELECT ") and statements[0].endswith("FOR UPDATE")
+
+
+def test_scheduled_loop_rejects_unoffered_write_tools(monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from app.agent import evaluation
+    responses = []
+    def respond(**kwargs):
+        responses.append(kwargs)
+        if len(responses) == 1:
+            payload = {"type": "function_call", "name": "update_thread", "call_id": "1",
+                       "arguments": json.dumps({"thread_id": 7, "status": "completed"})}
+            return SimpleNamespace(status="completed", output=[SimpleNamespace(**payload, model_dump=lambda **_: payload)])
+        assert "nicht verfügbar" in json.loads(kwargs["input"][-1]["output"])["error"]
+        return SimpleNamespace(status="completed", output=[], output_text="Keine Änderung ausgeführt.")
+    monkeypatch.setattr(assistant.client.responses, "create", respond)
+    monkeypatch.setattr(assistant, "update_thread", lambda *a, **kw: pytest.fail("Unexpected write"))
+    assert assistant.run_tool_loop("Test", [], evaluation.EVALUATION_TOOLS) == "Keine Änderung ausgeführt."
+
+
+def test_progress_and_response_tools_dispatch(fake_storage, monkeypatch):
+    assistant.update_thread.return_value = {"id": 7}
+    result = assistant.execute_tool("record_thread_progress", {"thread_id": 7, "progress_on": "2026-11-05"}, source_message_id=42)
+    assert result["updated"]
+    assert fake_storage["update_thread"][0]["kwargs"] == {"last_progress_on": "2026-11-05", "source_message_id": 42, "agent_write": True}
+    monkeypatch.setattr(assistant, "list_thread_responses", lambda tid, limit: [{"thread_id": tid, "limit": limit}])
+    assert assistant.execute_tool("list_thread_responses", {"thread_id": 7, "limit": 3}) == [{"thread_id": 7, "limit": 3}]
+    from app.agent import evaluation
+    assert "record_thread_progress" not in {t["name"] for t in evaluation.EVALUATION_TOOLS}
+    assert "list_thread_responses" in {t["name"] for t in evaluation.EVALUATION_TOOLS}

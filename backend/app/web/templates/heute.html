@@ -2,102 +2,39 @@
 {% block title %}Heute – Hugo{% endblock %}
 {% block content %}
 <div class="page-head">
-  <div>
-    <h1>Heute</h1>
-    <p class="page-subtitle">{{ today_weekday }}, {{ today|de_date }}</p>
-  </div>
+  <div><h1>Heute</h1><p class="page-subtitle">{{ today_weekday }}, {{ today|de_date }}</p></div>
   <form method="post" action="/ui/evaluate" data-loading-text="Auswertung läuft …">
     <button type="submit" class="button">Jetzt auswerten</button>
-    {% if last_run %}
-    <span class="muted">
-      Letzte Auswertung: {{ last_run.finished_at|de_datetime if last_run.finished_at else "läuft" }}
-      {% if last_run.status == "failed" %}(fehlgeschlagen){% endif %}
-    </span>
-    {% endif %}
+    {% if last_run %}<span class="muted">Letzte Auswertung: {{ last_run.finished_at|de_datetime if last_run.finished_at else "läuft" }}{% if last_run.status == "failed" %} (fehlgeschlagen){% endif %}</span>{% endif %}
   </form>
 </div>
 
-<section aria-label="Offene Vorschläge">
-  {% for s in open_suggestions %}
-  <article class="card suggestion{% if s.priority and s.priority >= 4 %} important{% endif %}">
-    <header class="suggestion-head">
-      {% if s.priority %}
-      <span class="priority prio-{{ s.priority }}" title="Priorität {{ s.priority }} von 5">P{{ s.priority }}</span>
-      {% endif %}
-      {% if s.thread_id %}
-      <a class="thread-ref" href="/ui/threads/{{ s.thread_id }}">{{ thread_titles.get(s.thread_id) }}</a>
-      {% else %}
-      <span class="thread-ref none">Allgemein</span>
-      {% endif %}
-      {% if s.suggested_date %}
-      {% set rel = fmt.relative_label(s.suggested_date, today) %}
-      <span class="date-hint {{ fmt.urgency_class(s.suggested_date, today) }}">
-        {{ s.suggested_date|de_date }}{% if rel %} ({{ rel }}){% endif %}
-      </span>
-      {% endif %}
-    </header>
-    <p class="suggestion-content">{{ s.content|source_links }}</p>
-    {% if s.reason %}
-    <p class="suggestion-reason muted">{{ s.reason|source_links }}</p>
-    {% endif %}
-    <footer class="actions">
-      <form method="post" action="/ui/suggestions/{{ s.id }}">
-        <input type="hidden" name="action" value="confirmed">
-        <button type="submit" class="button button-primary button-small">Bestätigen</button>
-      </form>
-      <form method="post" action="/ui/suggestions/{{ s.id }}">
-        <input type="hidden" name="action" value="deferred">
-        <label for="defer-{{ s.id }}">Wieder anzeigen am</label>
-        <input id="defer-{{ s.id }}" type="date" name="deferred_until" required>
-        <button type="submit" class="button button-small">Zurückstellen</button>
-      </form>
-      <form method="post" action="/ui/suggestions/{{ s.id }}" data-confirm="Diesen Vorschlag wirklich verwerfen?">
-        <input type="hidden" name="action" value="dismissed">
-        <button type="submit" class="button button-danger button-small">Verwerfen</button>
-      </form>
-    </footer>
-  </article>
-  {% else %}
-  <p class="empty-state card">Keine offenen Vorschläge. Hugo meldet sich, wenn etwas ansteht.</p>
-  {% endfor %}
+<section aria-label="Offene Meldungen">
+  {% if opened.total_count %}<p class="muted">{{ opened.total_count }} offene {{ 'Meldung' if opened.total_count == 1 else 'Meldungen' }}</p>{% endif %}
+  {% set group_prefix = 'open' %}
+  {% for group in opened.groups %}{% set group_number = loop.index %}{% include "today_group.html" %}
+  {% else %}<p class="empty-state card">Keine offenen Vorschläge. Hugo meldet sich, wenn etwas ansteht.</p>{% endfor %}
+  {% if opened.page_count > 1 %}
+  <nav class="today-pagination" aria-label="Offene Meldungen blättern">
+    {% if opened.page > 1 %}<a href="?page={{ opened.page - 1 }}&deferred_page={{ deferred.page }}">Zurück</a>{% endif %}
+    <span>Seite {{ opened.page }} von {{ opened.page_count }}</span>
+    {% if opened.page < opened.page_count %}<a href="?page={{ opened.page + 1 }}&deferred_page={{ deferred.page }}">Weitere Meldungen</a>{% endif %}
+  </nav>
+  {% endif %}
 </section>
 
-{% if deferred_suggestions %}
-<details class="deferred-section">
-  <summary>Zurückgestellt ({{ deferred_suggestions|length }})</summary>
-  {% for s in deferred_suggestions %}
-  <article class="card suggestion muted-card">
-    <p class="date-hint">{% if s.deferred_until %}Zurückgestellt bis {{ s.deferred_until|de_date }}{% else %}Ohne Wiedervorlagedatum zurückgestellt{% endif %}</p>
-    <header class="suggestion-head">
-      {% if s.priority %}
-      <span class="priority prio-{{ s.priority }}" title="Priorität {{ s.priority }} von 5">P{{ s.priority }}</span>
-      {% endif %}
-      {% if s.thread_id %}
-      <a class="thread-ref" href="/ui/threads/{{ s.thread_id }}">{{ thread_titles.get(s.thread_id) }}</a>
-      {% endif %}
-      {% if s.suggested_date %}
-      <span class="date-hint">{{ s.suggested_date|de_date }}</span>
-      {% endif %}
-    </header>
-    <p class="suggestion-content">{{ s.content|source_links }}</p>
-    <footer class="actions">
-      <form method="post" action="/ui/suggestions/{{ s.id }}">
-        <input type="hidden" name="action" value="confirmed">
-        <button type="submit" class="button button-small">Bestätigen</button>
-      </form>
-      <form method="post" action="/ui/suggestions/{{ s.id }}">
-        <input type="hidden" name="action" value="deferred">
-        <label for="defer-{{ s.id }}">Wieder anzeigen am</label>
-        <input id="defer-{{ s.id }}" type="date" name="deferred_until" value="{{ s.deferred_until or '' }}" required>
-        <button type="submit" class="button button-small">Datum setzen</button>
-      </form>
-      <form method="post" action="/ui/suggestions/{{ s.id }}" data-confirm="Diesen Vorschlag wirklich verwerfen?">
-        <input type="hidden" name="action" value="dismissed">
-        <button type="submit" class="button button-danger button-small">Verwerfen</button>
-      </form>
-    </footer>
-  </article>
-  {% endfor %}
+{% if deferred.total_count %}
+<details class="deferred-section" id="zurueckgestellt"{% if deferred.page > 1 %} open{% endif %}>
+  <summary>Zurückgestellt ({{ deferred.total_count }})</summary>
+  {% set group_prefix = 'deferred' %}
+  {% for group in deferred.groups %}{% set group_number = loop.index %}{% include "today_group.html" %}{% endfor %}
+  {% if deferred.page_count > 1 %}
+  <nav class="today-pagination" aria-label="Zurückgestellte Meldungen blättern">
+    {% if deferred.page > 1 %}<a href="?page={{ opened.page }}&deferred_page={{ deferred.page - 1 }}#zurueckgestellt">Zurück</a>{% endif %}
+    <span>Seite {{ deferred.page }} von {{ deferred.page_count }}</span>
+    {% if deferred.page < deferred.page_count %}<a href="?page={{ opened.page }}&deferred_page={{ deferred.page + 1 }}#zurueckgestellt">Weitere zurückgestellte Meldungen</a>{% endif %}
+  </nav>
+  {% endif %}
 </details>
 {% endif %}
 {% endblock %}

@@ -622,3 +622,15 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .fact-list { grid-template-columns: 1fr; }
   .fact-list dt { margin-top: 8px; }
 }
+
+/* User replies remain usable on narrow screens without a script. */
+.suggestion-reply { flex: 1 1 100%; min-width: 0; }
+.suggestion-reply label, #entscheidung label { display: block; margin: .5rem 0; }
+.suggestion-reply textarea { display: block; width: 100%; box-sizing: border-box; margin-bottom: .5rem; }
+#entscheidung input[type="date"] { max-width: 100%; margin-bottom: .5rem; }
+
+.today-group { margin: 1.5rem 0; min-width: 0; }
+.today-group-heading { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; margin-bottom: .5rem; }
+.today-group-heading h2 { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+.today-group-heading .muted { flex-shrink: 0; }
+.today-pagination { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .75rem; margin: 1.25rem 0; }

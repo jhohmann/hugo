@@ -237,6 +237,18 @@ def fake_storage(monkeypatch):
         web_routes, "get_messages",
         lambda cid: state["messages"].get(cid, []),
     )
+    def fake_today(*, status="open", page=1, mark_surfaced=False):
+        cards = fake_list_suggestions(status=status, mark_surfaced=mark_surfaced)
+        groups = {}
+        for card in cards:
+            key = card["thread_id"] if card["thread_id"] is not None else f"general:{card['id']}"
+            group = groups.setdefault(key, {"thread_id": card["thread_id"], "cards": [], "count": 0,
+                                           "title": (fake_get_thread(card["thread_id"]) or {}).get("title")})
+            group["cards"].append(card)
+            group["count"] += 1
+        return {"groups": list(groups.values()), "total_count": len(cards), "group_count": len(groups), "page": 1, "page_count": 1}
+    monkeypatch.setattr(web_routes, "list_today", fake_today)
+    monkeypatch.setattr(web_routes, "count_open_suggestions", lambda: sum(s["status"] == "open" for s in state["suggestions"]))
     monkeypatch.setattr(web_routes, "list_suggestions", fake_list_suggestions)
     monkeypatch.setattr(
         web_routes, "list_runs", lambda limit=50: state["runs"]
@@ -247,7 +259,7 @@ def fake_storage(monkeypatch):
     )
     monkeypatch.setattr(web_routes, "get_thread", fake_get_thread)
 
-    def fake_update(suggestion_id, status, deferred_until=None):
+    def fake_update(suggestion_id, status, deferred_until=None, source="ui", **kwargs):
         state["status_updates"].append((suggestion_id, status))
         for s in state["suggestions"]:
             if s["id"] == suggestion_id:
@@ -615,3 +627,125 @@ def test_evaluate_already_running(client, fake_storage, monkeypatch):
     response = client.post("/ui/evaluate")
     assert response.status_code == 409
     assert "Eine Auswertung läuft bereits" in response.text
+
+
+@pytest.mark.parametrize("action", ["completed", "archived", "deadline"])
+def test_thread_decision_is_explicit_and_scoped(client, fake_storage, monkeypatch, action):
+    captured = []
+    monkeypatch.setattr(web_routes, "update_thread", lambda tid, **kw: captured.append((tid, kw)) or {"id": tid})
+    response = client.post("/ui/threads/5/decision", data={
+        "action": action, "expected_updated_at": "2026-11-17T10:00:00+00:00",
+        "deadline": "2027-03-28", "priority": "5", "agent_write": "false",
+    }, follow_redirects=False)
+    assert response.status_code == 303
+    tid, changes = captured[0]
+    assert tid == 5 and changes["user_decision"] is True
+    assert "priority" not in changes and "agent_write" not in changes
+    if action == "deadline":
+        assert changes["deadline"].isoformat() == "2027-03-28T23:59:59.999999+02:00"
+    else:
+        assert changes["status"] == action
+
+
+@pytest.mark.parametrize("data", [
+    {"action": "active"},
+    {"action": "completed", "expected_updated_at": "2026-11-17T10:00:00"},
+    {"action": "deadline", "expected_updated_at": "2026-11-17T10:00:00Z", "deadline": ""},
+    {"action": "deadline", "expected_updated_at": "2026-11-17T10:00:00Z", "deadline": "morgen"},
+])
+def test_invalid_thread_decision_has_no_write(client, fake_storage, monkeypatch, data):
+    monkeypatch.setattr(web_routes, "update_thread", lambda *a, **kw: pytest.fail("Unexpected write"))
+    assert client.post("/ui/threads/5/decision", data=data).status_code == 400
+
+
+def test_thread_decision_conflict_missing_and_origin(client, fake_storage, monkeypatch):
+    data = {"action": "completed", "expected_updated_at": "2026-11-17T10:00:00Z"}
+    def conflict(*a, **kw):
+        raise web_routes.ThreadConflict("Bitte neu laden.")
+    monkeypatch.setattr(web_routes, "update_thread", conflict)
+    assert client.post("/ui/threads/5/decision", data=data).status_code == 409
+    monkeypatch.setattr(web_routes, "update_thread", lambda *a, **kw: None)
+    assert client.post("/ui/threads/999/decision", data=data).status_code == 404
+    assert client.post("/ui/threads/5/decision", data=data, headers={"Origin": "https://elsewhere.test"}).status_code == 403
+
+
+def test_thread_decision_form_preserves_precise_deadline_until_submitted(client, fake_storage):
+    page = client.get("/ui/threads/5").text
+    assert 'id="entscheidung"' in page
+    assert 'name="expected_updated_at"' in page
+    assert 'value="2027-03-01"' in page
+    assert fake_storage["threads"][0]["deadline"] == datetime(2027, 3, 1, tzinfo=timezone.utc)
+
+
+def test_typed_cards_have_matching_actions(client, fake_storage):
+    base = fake_storage["suggestions"][0]
+    fake_storage["suggestions"] = [
+        {**base, "id": 51, "kind": "status_check", "revision": 3},
+        {**base, "id": 52, "kind": "question", "revision": 1,
+         "response_options": ["Zwei Tage", "<script>"], "allow_free_text": True},
+    ]
+    page = client.get("/ui/heute").text
+    assert "Statusabfrage" in page and "Rückfrage" in page
+    for label in ("Bin dran", "Pausiert", "Erledigt", "Kein Fortschritt", "Zwei Tage", "Deine Antwort"):
+        assert label in page
+    assert "&lt;script&gt;" in page
+    assert "Bestätigen</button>" not in page
+    assert 'name="answer" value="option:1"' in page
+
+
+def test_typed_answer_ui_and_api_errors(client, fake_storage, monkeypatch):
+    from app import main
+    from app.storage.suggestion_responses import SuggestionConflict
+    calls = []
+    def reply(sid, answer, **kwargs):
+        calls.append((sid, answer, kwargs))
+        return {"answered": True, "replayed": False}
+    monkeypatch.setattr(web_routes, "answer_suggestion", reply)
+    monkeypatch.setattr(main, "answer_suggestion", reply)
+    data = {"answer": "text", "text": "Zwei Wochen", "expected_revision": 2}
+    assert client.post("/ui/suggestions/7/answer", data=data, follow_redirects=False).status_code == 303
+    assert calls[-1] == (7, "text", {"expected_revision": 2, "text": "Zwei Wochen", "source": "ui"})
+    assert client.post("/suggestions/7/answer", json=data).json()["answered"]
+    assert calls[-1][2]["source"] == "api"
+    def conflict(*a, **kw):
+        raise SuggestionConflict("Nicht mehr aktuell")
+    monkeypatch.setattr(web_routes, "answer_suggestion", conflict)
+    monkeypatch.setattr(main, "answer_suggestion", conflict)
+    assert client.post("/ui/suggestions/7/answer", data=data).status_code == 409
+    assert client.post("/suggestions/7/answer", json=data).status_code == 409
+    assert client.post("/suggestions/7/answer", json={"answer": "text"}).status_code == 422
+
+
+def test_explicit_resume_and_paused_details(client, fake_storage, monkeypatch):
+    thread = fake_storage["threads"][0]
+    thread["paused"] = True
+    page = client.get("/ui/threads/5").text
+    assert "Pausiert – keine neuen Hinweise" in page and "Vorhaben fortsetzen" in page
+    seen = []
+    monkeypatch.setattr(web_routes, "update_thread", lambda tid, **kw: seen.append(kw) or {"id": tid})
+    result = client.post("/ui/threads/5/decision", data={"action": "resume", "expected_updated_at": "2026-11-17T10:00:00Z"}, follow_redirects=False)
+    assert result.status_code == 303
+    assert seen[0]["paused"] is False and seen[0]["user_decision"] is True
+
+
+def test_today_groups_one_project_and_shows_total(client, fake_storage):
+    base = fake_storage["suggestions"][0]
+    fake_storage["suggestions"] = [base, {**base, "id": 99, "content": "Weitere Entscheidung"}]
+    page = client.get("/ui/heute").text
+    assert "2 offene Meldungen" in page and "2 Meldungen" in page
+    assert page.count('class="today-group"') == 1
+    assert 'name="next" value="/ui/heute?page=1&amp;deferred_page=1"' in page
+
+
+def test_navigation_counts_without_loading_cards(client, fake_storage):
+    base = fake_storage["suggestions"][0]
+    fake_storage["suggestions"] = [{**base, "id": i} for i in range(503)]
+    fake_storage["surfaced_calls"].clear()
+    page = client.get("/ui/threads").text
+    assert '>503</span>' in page
+    assert fake_storage["surfaced_calls"] == []
+
+
+def test_today_pagination_validation(client, fake_storage):
+    assert client.get("/ui/heute?page=0").status_code == 422
+    assert client.get("/ui/heute?deferred_page=-1").status_code == 422

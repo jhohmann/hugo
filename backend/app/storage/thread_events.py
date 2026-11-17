@@ -11,6 +11,7 @@ TRACKED_FIELDS = (
     "title", "description", "status", "priority", "deadline", "event_start",
     "event_end", "time_precision", "act_by", "time_text", "next_action",
     "blocked_reason", "preparation_weeks", "tags", "review_on", "waiting_for",
+    "paused", "last_progress_on", "progress_recorded_at", "last_confirmed_at", "last_response_at",
 )
 
 
@@ -22,7 +23,7 @@ def _json_value(value):
     return value
 
 
-def record_thread_event(cur, before, after, *, source_message_id=None, automatic_fields=()):
+def record_thread_event(cur, before, after, *, source_message_id=None, automatic_fields=(), user_decision=False):
     """Record actual persisted differences, excluding technical fields."""
     changes = {}
     for field in TRACKED_FIELDS:
@@ -38,7 +39,7 @@ def record_thread_event(cur, before, after, *, source_message_id=None, automatic
            VALUES (%s, %s, %s, %s, %s, %s)""",
         (
             after["id"], "created" if before is None else "updated",
-            "conversation" if source_message_id is not None else "internal",
+            "user_decision" if user_decision else ("conversation" if source_message_id is not None else "internal"),
             source_message_id, Jsonb(changes), sorted(set(automatic_fields) & changes.keys()),
         ),
     )

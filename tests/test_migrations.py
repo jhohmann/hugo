@@ -38,9 +38,9 @@ def migration_files(tmp_path):
 def test_fresh_install_and_repeat(database):
     result = migrate.run_migrations(database)
     assert result["status"] == "ok"
-    assert [m["version"] for m in result["applied"]] == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert [m["version"] for m in result["applied"]] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     with psycopg.connect(database) as conn:
-        assert conn.execute("SELECT count(*) FROM pg_tables WHERE schemaname='public'").fetchone()[0] == 20
+        assert conn.execute("SELECT count(*) FROM pg_tables WHERE schemaname='public'").fetchone()[0] == 22
         assert conn.execute("SELECT checksum FROM schema_version").fetchone()[0]
         conn.execute("INSERT INTO conversations (title) VALUES ('preserve me')")
     repeated = migrate.run_migrations(database)
@@ -116,7 +116,7 @@ def test_concurrent_runners_apply_once(database):
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: migrate.run_migrations(database), range(2)))
     assert all(result["status"] == "ok" for result in results)
-    assert sum(len(result["applied"]) for result in results) == 8
+    assert sum(len(result["applied"]) for result in results) == 14
 
 
 def test_duplicate_versions_rejected_before_connect(tmp_path):
@@ -178,3 +178,23 @@ def test_thread_tags_persistence_filtering_and_atomic_updates(database, monkeypa
                 conn.execute("INSERT INTO thread_tags VALUES (%s, 'unknown')", (private,))
         conn.execute("DELETE FROM threads WHERE id = %s", (closed,))
         assert conn.execute("SELECT count(*) FROM thread_tags WHERE thread_id = %s", (closed,)).fetchone()[0] == 0
+
+
+def test_typed_upgrade_preserves_legacy_suggestion(database, tmp_path):
+    import shutil
+    for version, source in migrate.get_migration_files():
+        if version <= 9:
+            shutil.copy(source, tmp_path / source.name)
+    assert migrate.run_migrations(database, directory=tmp_path)["status"] == "ok"
+    with psycopg.connect(database) as conn:
+        tid = conn.execute("INSERT INTO threads (title) VALUES ('Altes Vorhaben') RETURNING id").fetchone()[0]
+        sid = conn.execute("INSERT INTO suggestions (thread_id, content, status) VALUES (%s, 'Bestehender Hinweis', 'dismissed') RETURNING id", (tid,)).fetchone()[0]
+        before = conn.execute("SELECT row_to_json(s) FROM suggestions s WHERE id = %s", (sid,)).fetchone()[0]
+    result = migrate.run_migrations(database)
+    assert result["status"] == "ok"
+    with psycopg.connect(database) as conn:
+        after = conn.execute("SELECT row_to_json(s) FROM suggestions s WHERE id = %s", (sid,)).fetchone()[0]
+        assert all(after[key] == value for key, value in before.items())
+        assert after["kind"] == "proposal" and after["revision"] == 1
+        assert after["response_options"] == [] and after["occasion_key"] is None
+        assert conn.execute("SELECT paused, last_progress_on, last_confirmed_at FROM threads WHERE id = %s", (tid,)).fetchone() == (False, None, None)
