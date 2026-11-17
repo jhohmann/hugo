@@ -220,6 +220,9 @@ unter `/ui/settings` für Verbindungen, KI und tägliche Auswertungen.
 - Meldungen je Vorhaben gemeinsam anzeigen; allgemeine Meldungen bleiben einzeln.
   Die Reihenfolge übernimmt Meldungspriorität und empfohlenes Datum. Es entsteht
   keine zusätzliche Tageszusammenfassung oder zweite Vorschlagsliste.
+- Vorhabengruppen mit Klartext-Titel, V-Kennung und separatem **Vorhaben öffnen**-Link.
+  Karten trennen Inhalt und Aktionen; Links und Datumseingaben passen sich dem
+  Hell-/Dunkelmodus an. Zurückgestellte Meldungen bleiben ohne reduzierte Deckkraft lesbar.
 - Zehn Gruppen je Seite; **Weitere Meldungen** macht auch größere Bestände erreichbar.
   Offene und zurückgestellte Meldungen haben getrennte Seiten (`page`, `deferred_page`).
   Gesamtzahl und Navigationszähler zählen alle offenen Meldungen. Aktionen führen

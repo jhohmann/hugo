@@ -1,19 +1,23 @@
 {% extends "base.html" %}
 {% block title %}Heute – Hugo{% endblock %}
 {% block content %}
-<div class="page-head">
+<div class="today-page">
+<div class="page-head today-head">
   <div><h1>Heute</h1><p class="page-subtitle">{{ today_weekday }}, {{ today|de_date }}</p></div>
-  <form method="post" action="/ui/evaluate" data-loading-text="Auswertung läuft …">
+  <form class="today-evaluation" method="post" action="/ui/evaluate" data-loading-text="Auswertung läuft …">
     <button type="submit" class="button">Jetzt auswerten</button>
-    {% if last_run %}<span class="muted">Letzte Auswertung: {{ last_run.finished_at|de_datetime if last_run.finished_at else "läuft" }}{% if last_run.status == "failed" %} (fehlgeschlagen){% endif %}</span>{% endif %}
+    {% if last_run %}<span class="today-run-status{% if last_run.status == 'failed' %} today-run-failed{% endif %}">Letzte Auswertung: {{ last_run.finished_at|de_datetime if last_run.finished_at else "läuft" }}{% if last_run.status == "failed" %} (fehlgeschlagen){% endif %}</span>{% endif %}
   </form>
 </div>
 
-<section aria-label="Offene Meldungen">
-  {% if opened.total_count %}<p class="muted">{{ opened.total_count }} offene {{ 'Meldung' if opened.total_count == 1 else 'Meldungen' }}</p>{% endif %}
+<section aria-labelledby="today-open-heading">
+  <div class="today-section-heading">
+    <h2 id="today-open-heading">Im Blick</h2>
+    <span class="today-count">{{ opened.total_count }} offene {{ 'Meldung' if opened.total_count == 1 else 'Meldungen' }}</span>
+  </div>
   {% set group_prefix = 'open' %}
   {% for group in opened.groups %}{% set group_number = loop.index %}{% include "today_group.html" %}
-  {% else %}<p class="empty-state card">Keine offenen Vorschläge. Hugo meldet sich, wenn etwas ansteht.</p>{% endfor %}
+  {% else %}<div class="empty-state card today-empty"><h3>Keine offenen Meldungen</h3><p>Hugo meldet sich, wenn etwas ansteht.</p></div>{% endfor %}
   {% if opened.page_count > 1 %}
   <nav class="today-pagination" aria-label="Offene Meldungen blättern">
     {% if opened.page > 1 %}<a href="?page={{ opened.page - 1 }}&deferred_page={{ deferred.page }}">Zurück</a>{% endif %}
@@ -25,7 +29,7 @@
 
 {% if deferred.total_count %}
 <details class="deferred-section" id="zurueckgestellt"{% if deferred.page > 1 %} open{% endif %}>
-  <summary>Zurückgestellt ({{ deferred.total_count }})</summary>
+  <summary>Zurückgestellt <span class="today-count">{{ deferred.total_count }}</span></summary>
   {% set group_prefix = 'deferred' %}
   {% for group in deferred.groups %}{% set group_number = loop.index %}{% include "today_group.html" %}{% endfor %}
   {% if deferred.page_count > 1 %}
@@ -37,4 +41,5 @@
   {% endif %}
 </details>
 {% endif %}
+</div>
 {% endblock %}
