@@ -8,12 +8,6 @@ Dieser Arbeitsplan übersetzt die Zukunftsvision vom 16.11.2026 in kleine, über
 
 „Agenten“ meint hier **Entwicklungsagenten mit abgegrenzten Aufträgen**. Hugo behält einen zentralen modellgeführten Laufzeitagenten mit Werkzeugen. Kein neues Multi-Agenten-System, kein dauerhafter Python-Worker und keine doppelte Modellladung.
 
-**Nutzerfestlegung vom 17.11.2026:** Auf diesem Rechner ist kein Modellzugang
-integriert; die Zugänge dürfen als geprüft angenommen werden. Diese Integrations-
-prüfung wird für die Weiterentwicklung übernommen und blockiert lokale Pakete nicht.
-Das ist von der hier nicht ausgeführten qualitativen Live-Modellbeobachtung zu
-unterscheiden. Keine erneute Zugangseinrichtung auf dieser Maschine verlangen.
-
 ## Verbindliche Produktentscheidungen
 
 - „Heute“ ist der zentrale Eingang für drei Meldungstypen: **Vorschlag**, **Statusabfrage**, **Rückfrage**. Reine Informationsmeldungen entfallen; jede Meldung ermöglicht eine konkrete Entscheidung oder Handlung.
@@ -88,6 +82,12 @@ Doppelte Antworten sind idempotent; abweichende oder veraltete Antworten werden
 abgewiesen. „Erledigt“ und seine Antwort werden gemeinsam mit dem Vorhabenabschluss
 transaktional gespeichert. Legacy-Vorschläge bleiben nutzbar. Technische Tests und
 Desktop-/Smartphone-Proben bestanden; echte Modellwahl der Meldungstypen bleibt offen.
+
+**Nachprüfung 17.11.2026:** Der alte Statuspfad ist ebenfalls gegen nachträgliche
+Änderungen bestätigter/verworfener Karten abgesichert, auch ohne Revision.
+Die API akzeptiert optional `expected_revision`; Konflikte ergeben 409.
+Paralleles Antworten/Verwerfen und unveränderliche Antwortbelege sind mit
+echtem PostgreSQL 17.11 geprüft. Keine neue Migration erforderlich.
 
 **Abhängigkeit:** Schritt 1.
 
@@ -227,6 +227,16 @@ PostgreSQL-17- noch den Proxmox-Nachweis. Anschließend bestanden 77 gezielte
 Regressionen für konsistente Antwortwiederholung und Aufhebungsbegründung.
 Echte Modellabnahme bleibt mangels Zugang offen.
 
+**Ergänzender lokaler Nachweis 17.11.2026:** 204 gezielte Tests gegen einen
+isolierten PostgreSQL-17.11-Container bestanden ohne Überspringen. Neuinstallation,
+Updates von jedem Stand 001–013 auf 014, Wiederholung, Prüfsummen, Rollback und
+parallele Migrationen geprüft. Ein lokaler Scannerfehler durch Verzeichnisse mit
+`.sql`-Namen wurde behoben; bestehende SQL-Dateien bleiben unverändert.
+Die Diagnose enthält nun sieben Fälle, darunter schrumpfende nutzbare Zeit trotz
+ferner Deadline und fehlender neuer Anlass, mit optional kontrolliertem Zeitpunkt.
+Alle Dry-Runs bestanden, keine neue Live-Modellabnahme. Details und Grenzen in
+[README.md](README.md#migrations--und-antwortschutzprüfung-am-17112026).
+
 **Beginn:** Kleine feste Prüffälle ab Schritt 1; integrierte Alltagsprüfung nach Schritt 5. Kein abschließendes Sammelprojekt, das Tests bis zum Ende aufschiebt.
 
 **Agentenauftrag:** Technische Sicherheit und tatsächliche Entlastung getrennt nachweisen.
@@ -245,11 +255,12 @@ Echte Modellabnahme bleibt mangels Zugang offen.
 
 **Als Nächstes:** Die lokale Bündelung im Alltag mit den vorhandenen geprüften
 Zugängen beobachten: hilfreiche Interventionen, unnötige Wiederholungen, überholte
-Fragen und Korrekturbedarf. Bei verfügbarer Laufzeitumgebung können die fünf
+Fragen und Korrekturbedarf. Bei verfügbarer Laufzeitumgebung können die sieben
 synthetischen Fälle gezielt mit `scripts/check_proactive_planning.py --case <Fall>`
 geprüft werden; fehlender Modellzugang auf diesem Rechner blockiert keine weitere
 lokale Entwicklung. Zusätzlichen Zustellkanal erst als eigenen Auftrag auswählen
 und dessen Einwilligung, Ruhezeiten und Fehlerverhalten umsetzen. Zielbetrieb,
-Host-Timer, PSS und PostgreSQL 17 separat verifizieren, ohne sie aus lokalen Tests
-abzuleiten. Letzter Stand: 420 Regressionen und sechs Browserproben bestanden,
+Host-Timer, PSS und PostgreSQL 17 im Zielbetrieb separat verifizieren, ohne sie aus lokalen Tests
+abzuleiten. Voriger Gesamtlauf: 420 Regressionen und sechs Browserproben bestanden;
+aktuelle Nachprüfung: 204 gezielte Tests auf PostgreSQL 17.11 bestanden.
 Restore-Probe bis Migration 013 erledigt. Keine Unteraufgabenverwaltung vorziehen.

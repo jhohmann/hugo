@@ -388,6 +388,10 @@ def update_suggestion_status(
     only_unhandled: bool = False,
     reaction_reason: str | None = None,
 ) -> dict | None:
+    from app.storage.suggestion_responses import SuggestionConflict
+
+    if expected_revision is not None and (type(expected_revision) is not int or expected_revision < 1):
+        raise ValueError("Bitte eine gültige Meldungsrevision angeben.")
     if only_unhandled and (source != "internal" or status != "dismissed" or not isinstance(reaction_reason, str)
                            or not reaction_reason.strip() or len(reaction_reason) > 500):
         raise ValueError("Eine interne Aufhebung benötigt eine kurze konkrete Begründung.")
@@ -418,11 +422,13 @@ def update_suggestion_status(
             if current is None:
                 return None
             if expected_revision is not None and current[2] != expected_revision:
-                from app.storage.suggestion_responses import SuggestionConflict
                 raise SuggestionConflict("Diese Meldung wurde inzwischen geändert. Bitte neu laden.")
             if only_unhandled and current[0] not in ("open", "deferred"):
-                from app.storage.suggestion_responses import SuggestionConflict
                 raise SuggestionConflict("Diese Meldung wurde bereits bearbeitet.")
+            # All entry points, including legacy clients without a revision, must
+            # preserve terminal decisions. Identical retries remain read-only.
+            if current[0] in ("confirmed", "dismissed") and current[0] != status:
+                raise SuggestionConflict("Diese Meldung wurde bereits bearbeitet; nur offene oder zurückgestellte Meldungen können geändert werden.")
             if status == "confirmed" and current[1] != "proposal":
                 raise ValueError("Bitte die passende Antwortfunktion für diese Meldung verwenden.")
             if status == "deferred" and current[0] not in ("open", "deferred"):

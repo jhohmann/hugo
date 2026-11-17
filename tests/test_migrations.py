@@ -126,6 +126,14 @@ def test_duplicate_versions_rejected_before_connect(tmp_path):
     assert result["status"] == "error" and "eindeutige" in result["error"]
 
 
+def test_sql_named_directories_are_not_migrations(tmp_path):
+    source = tmp_path / "001_initial.sql"
+    source.write_text("SELECT 1;", encoding="utf-8")
+    (tmp_path / "001_obsolete.sql").mkdir()
+    (tmp_path / "not_a_migration.sql").mkdir()
+    assert migrate.get_migration_files(tmp_path) == [(1, source)]
+
+
 def test_failed_migration_cli_has_nonzero_exit(monkeypatch):
     monkeypatch.setattr("sys.argv", ["migrate"])
     monkeypatch.setattr(migrate, "load_environment", lambda *_: None)
@@ -198,3 +206,40 @@ def test_typed_upgrade_preserves_legacy_suggestion(database, tmp_path):
         assert after["kind"] == "proposal" and after["revision"] == 1
         assert after["response_options"] == [] and after["occasion_key"] is None
         assert conn.execute("SELECT paused, last_progress_on, last_confirmed_at FROM threads WHERE id = %s", (tid,)).fetchone() == (False, None, None)
+
+
+@pytest.mark.parametrize("baseline_version", range(1, 14))
+def test_upgrade_from_each_version_preserves_existing_records(database, tmp_path, baseline_version):
+    """Exercise every deployed prefix, including typed replies and 013 -> 014."""
+    for version, source in migrate.get_migration_files():
+        if version <= baseline_version:
+            (tmp_path / source.name).write_bytes(source.read_bytes())
+    assert migrate.run_migrations(database, directory=tmp_path)["status"] == "ok"
+    with psycopg.connect(database) as conn:
+        cid = conn.execute("INSERT INTO conversations (title) VALUES ('Erhalten') RETURNING id").fetchone()[0]
+        mid = conn.execute("INSERT INTO messages (conversation_id, role, content) VALUES (%s, 'user', 'Zwei Tage') RETURNING id", (cid,)).fetchone()[0]
+        tid = conn.execute("INSERT INTO threads (title, deadline) VALUES ('Bestehendes Vorhaben', '2027-04-01T12:00:00+02:00') RETURNING id").fetchone()[0]
+        sid = conn.execute("INSERT INTO suggestions (thread_id, content, status) VALUES (%s, 'Bestehende Entscheidung', 'confirmed') RETURNING id", (tid,)).fetchone()[0]
+        if baseline_version >= 10:
+            conn.execute("UPDATE suggestions SET kind='question', allow_free_text=true WHERE id=%s", (sid,))
+            conn.execute("INSERT INTO suggestion_responses (suggestion_id, answer, response_text, source, message_id) VALUES (%s, 'text', 'Zwei Tage', 'ui', %s)", (sid, mid))
+        if baseline_version >= 11:
+            conn.execute("UPDATE threads SET paused=true, last_response_at=NOW(), last_confirmed_at=NOW() WHERE id=%s", (tid,))
+        if baseline_version >= 12:
+            conn.execute("UPDATE suggestions SET occasion_key='aufwand' WHERE id=%s", (sid,))
+            conn.execute("INSERT INTO suggestion_reactions (suggestion_id, action, source) VALUES (%s, 'deferred', 'ui')", (sid,))
+        tables = [row[0] for row in conn.execute("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")]
+        before = {table: conn.execute(sql.SQL("SELECT row_to_json(t) FROM {} t").format(sql.Identifier(table))).fetchall() for table in tables}
+    result = migrate.run_migrations(database)
+    assert result["status"] == "ok", result
+    assert [entry["version"] for entry in result["applied"]] == list(range(baseline_version + 1, 15))
+    with psycopg.connect(database) as conn:
+        for table, rows in before.items():
+            after = [row[0] for row in conn.execute(sql.SQL("SELECT row_to_json(t) FROM {} t").format(sql.Identifier(table)))]
+            for (old,) in rows:
+                assert any(all(new.get(key) == value for key, value in old.items()) for new in after), table
+        assert conn.execute("SELECT last_progress_on FROM threads WHERE id=%s", (tid,)).fetchone()[0] is None
+        assert conn.execute("SELECT reason FROM suggestion_reactions LIMIT 1").fetchone() in (None, (None,))
+        assert conn.execute("SELECT to_regclass('idx_suggestion_reactions_suggestion')").fetchone()[0]
+    repeated = migrate.run_migrations(database)
+    assert repeated["status"] == "ok" and repeated["applied"] == []

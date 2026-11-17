@@ -236,7 +236,9 @@ def test_suggestion_statuswechsel(cleanup):
     deferred = update_suggestion_status(still_open["suggestion_id"], "deferred")
     assert deferred["status"] == "deferred"
 
-    dismissed = update_suggestion_status(suggestion_id, "dismissed")
+    with pytest.raises(ValueError, match="bereits bearbeitet"):
+        update_suggestion_status(suggestion_id, "dismissed")
+    dismissed = update_suggestion_status(still_open["suggestion_id"], "dismissed")
     assert dismissed["status"] == "dismissed"
 
     assert update_suggestion_status(999999999, "dismissed") is None

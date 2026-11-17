@@ -66,6 +66,7 @@ class SuggestionAnswer(BaseModel):
 class SuggestionPatch(BaseModel):
     status: str = Field(min_length=1)
     deferred_until: date | None = None
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 @app.get("/")
@@ -228,7 +229,10 @@ def patch_suggestion(suggestion_id: int, patch: SuggestionPatch):
     try:
         result = update_suggestion_status(
             suggestion_id, patch.status, deferred_until=patch.deferred_until, source="api",
+            expected_revision=patch.expected_revision,
         )
+    except SuggestionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if result is None:

@@ -25,6 +25,8 @@ def get_migrations_dir() -> Path:
 def get_migration_files(directory: Path | None = None) -> list[tuple[int, Path]]:
     files = []
     for path in (directory or get_migrations_dir()).glob("*.sql"):
+        if not path.is_file():
+            continue
         match = re.fullmatch(r"([0-9]+)_[a-z0-9_]+\.sql", path.name)
         if not match or int(match[1]) < 1:
             raise MigrationError(f"Ungültiger Migrationsname: {path.name}")

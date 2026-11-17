@@ -775,6 +775,8 @@ Erstinstallation und Updates verwenden `app.migrate`.
 - Bei einem Fehler wird diese Transaktion zurückgerollt; abgeschlossene Migrationen bleiben bestehen.
 - Fehlende oder veränderte Dateien sowie eine zum Code neuere Datenbank blockieren den Lauf.
 - LF und CRLF ergeben dieselbe Prüfsumme.
+- Nur reguläre SQL-Dateien werden eingelesen; Verzeichnisse mit `.sql` im Namen
+  sind keine Migrationen. Doppelte Nummern tatsächlicher Dateien bleiben ein Fehler.
 
 Eine vollständige, unversionierte Entwicklungsdatenbank kann ohne Löschen der Inhalte übernommen werden. Fehlende benötigte Spalten verhindern die Übernahme.
 
@@ -1260,6 +1262,10 @@ Ereignis in derselben Transaktion. Ein Fehler rollt auch die Gesprächsanlage zu
 Allgemeines Bestätigen über den alten Statusendpunkt ist für Fragen ausgeschlossen;
 der alte Vorschlags-/Wiedervorlagepfad bleibt kompatibel. Legacy-Statuswechsel
 enthalten weiterhin keine inhaltliche Antwortaufzeichnung wie der neue Antwortpfad.
+Auch dieser Pfad darf bestätigte oder verworfene Meldungen nicht nachträglich
+umstellen (409). Identische Legacy-Statuswiederholungen ohne veraltete Revision
+verändern weder Karte noch Reaktionshistorie. Die Sperre liegt unter derselben
+Zeilensperre wie die Antwortverarbeitung und gilt auch ohne mitgesendete Revision.
 Eine angenommene Empfehlung verändert keinen Kalender.
 
 Migration `011_thread_observations.sql` ergänzt voneinander getrennt:
@@ -1443,6 +1449,10 @@ Datiertes Zurückstellen:
 
 Das Datum muss in der Zukunft liegen. Bei anderen Statuswerten ist
 `deferred_until` nicht zulässig. Ohne Datum ist Zurückstellen unbefristet.
+`PATCH /suggestions/{id}` akzeptiert zusätzlich `expected_revision` (positive
+Ganzzahl); ein veralteter Stand ergibt 409. Bestehende Aufrufe ohne dieses Feld
+bleiben für offene/vertagte Karten gültig. Ein Wechsel aus `confirmed` oder
+`dismissed` in einen anderen Status wird auch ohne Revision mit 409 abgewiesen.
 
 ### Kalender
 
@@ -1676,7 +1686,7 @@ zusätzlich in jedem Lauf im Kontext. Fehlgeschlagene Auswertung und geschlossen
 Restseiten wurden separat geprüft. Gemeinsame Auswertungssperre und Tagessteuerung
 blieben in den Tests wirksam. Der anschließende vollständige Offline-Gesamtlauf bestand **410 Tests**, 12 optionale Prüfungen übersprungen.
 
-`scripts/check_proactive_planning.py` bereitet fünf begrenzte Modellproben mit
+`scripts/check_proactive_planning.py` bereitete zunächst fünf begrenzte Modellproben mit
 synthetischem Bestand vor: unbekannter Stand, Projektpause, fehlender Aufwand,
 unverändert abgelehnter Anlass und fehlender Kalenderzugriff. Es verarbeitet nur
 simulierte Fachwerkzeuge, schreibt keine Vorhaben/Kalender und führt beim Import
@@ -1684,6 +1694,14 @@ nichts aus. `--case` wählt genau einen Fall; `--dry-run` zeigt den Bestand ohne
 Modellaufruf. Ohne Dry-Run verwendet es den konfigurierten Anbieter mit höchstens
 fünf Runden und 1800 Ausgabetokens je Runde; die üblichen Modellkosten können anfallen.
 Eine erfolgreiche Einzelprobe ersetzt keine längere Qualitätsbeobachtung.
+
+Die Diagnose umfasst inzwischen zusätzlich `shrinking_capacity` (ferne Deadline,
+aber nur noch zwei nutzbare Arbeitsfenster laut ausdrücklicher Nutzerangabe) und
+`no_change` (gerade bestätigter Stand ohne neuen Anlass). `--at` setzt optional
+einen festen Prüfzeitpunkt mit Zeitzone, beispielsweise
+`--at 2026-11-17T10:00:00+01:00`; Kontext und Modellanweisungen verwenden dann
+denselben Berlin-Zeitpunkt. Kalenderwerkzeuge bleiben simuliert nicht verbunden;
+die Kapazitätsangaben im ersten Fall sind Nutzerbelege, keine Kalenderbestätigung.
 
 Lokale Wiederherstellungsprobe desselben Stands: `pg_dump` im Custom-Format und
 `pg_restore --exit-on-error` in eine neue zufällig benannte Datenbank der isolierten
@@ -1757,6 +1775,40 @@ und häufigere spontane Auslöser sind separate weitere Schritte. Es wurde kein
 Push-/Maildienst angebunden und kein Produktivdeployment vorgenommen. Proxmox-
 Betrieb und konkrete Kalender-/Modellqualität sind durch diese lokalen Tests
 weiterhin nicht neu nachgewiesen.
+
+### Migrations- und Antwortschutzprüfung am 17.11.2026
+
+Die lokale Prüfung fand sechs Verzeichnisse mit historischen `.sql`-Namen im
+Migrationsordner. Der Scanner zählte sie als zusätzliche Migrationen und brach
+wegen doppelter Versionsnummern ab. Er berücksichtigt jetzt ausschließlich
+Dateien. Die Verzeichnisse und alle bestehenden SQL-Dateien blieben unverändert;
+ein Regressionstest sichert die Dateiauswahl ab.
+
+Geprüft unter Windows/Python 3.13 gegen einen kurzlebigen Docker-Container mit
+`pgvector/pgvector:pg17`, tatsächlich PostgreSQL **17.11**, eigenem lokalen Port
+und temporärem Datenverzeichnis ohne bestehende Volumes:
+
+- **130 Tests bestanden** für Migrationen, Meldungsantworten, Wiedervorlagen,
+  Bestandsabdeckung, Heute und Web. **74 weitere Tests bestanden** für den alten
+  Statuspfad, Agentenwerkzeuge, Auswertung, Terminsteuerung und Datumslogik.
+  Kein Test dieser beiden Läufe wurde übersprungen.
+- Alle 14 Migrationen wurden über den regulären Befehl `python -m app.migrate`
+  auf eine leere Testdatenbank angewendet; die Wiederholung übersprang alle 14.
+- Updates von jedem Schema-Stand 001 bis 013 auf 014 erhalten vorhandene
+  Datensätze einschließlich Antworten, Pausen, Reaktionen und Versionsbelegen.
+  Bestehende Tests für unversionierte Übernahme, Transaktionsrollback,
+  Prüfsummenabweichungen und parallele Migrationsläufe bestanden ebenfalls.
+- Bereits beantwortete Karten bleiben auch über den alten API-/UI-Statuspfad
+  geschützt. Konkurrierendes Antworten/Verwerfen hinterlässt genau eine
+  Entscheidung; identische Legacy-Wiederholungen erzeugen keine zweite Reaktion.
+- Alle sieben Diagnosefälle bestanden den Dry-Run mit festem Berlin-Zeitpunkt.
+  Kein echter Modell- oder Kalenderaufruf wurde ausgeführt.
+
+Das ist ein lokaler PostgreSQL-17-Nachweis, keine Proxmox-Abnahme und kein
+vollständiger erneuter Browser-/Gesamtregressionslauf. Produktive Datenbanken
+wurden nicht migriert. Die frühere Restore-Probe bleibt auf Stand 013 begrenzt;
+Restore bis 014, Host-Timer, PSS und qualitative Modellbeobachtung bleiben offen.
+Für diese Korrekturen ist keine neue Schema-Migration erforderlich.
 
 ### Automatisierte Tests
 

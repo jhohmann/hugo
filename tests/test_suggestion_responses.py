@@ -270,3 +270,76 @@ def test_obsolete_card_is_audited_without_rewriting_user_reaction(store):
             only_unhandled=True, reaction_reason="Darf nicht umgeschrieben werden.")
     with store() as conn:
         assert conn.execute("SELECT status FROM suggestions WHERE id=%s", (handled,)).fetchone()[0] == "confirmed"
+
+
+@pytest.mark.parametrize("kind,code,options", [
+    ("proposal", "accepted", {}), ("status_check", "in_progress", {}),
+    ("question", "option:0", {"response_options": ["Zwei Tage"]}),
+])
+def test_answer_is_protected_across_legacy_writers(store, kind, code, options):
+    sid = card(kind, **options)
+    first = answer(sid, code)
+    before = suggestions.list_suggestions()[0]
+    for source in ("ui", "api", "chat", "internal"):
+        for status in ("dismissed", "deferred", "open"):
+            with pytest.raises(replies.SuggestionConflict):
+                suggestions.update_suggestion_status(sid, status, source=source)
+    assert suggestions.list_suggestions()[0] == before
+    assert answer(sid, code)["conversation_id"] == first["conversation_id"]
+    with store() as conn:
+        assert conn.execute("SELECT count(*) FROM suggestion_responses").fetchone()[0] == 1
+        assert conn.execute("SELECT count(*) FROM suggestion_reactions").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("status,other", [("confirmed", "dismissed"), ("dismissed", "confirmed")])
+def test_legacy_terminal_retries_are_read_only(store, status, other):
+    sid = card("proposal")
+    first = suggestions.update_suggestion_status(sid, status, source="api")
+    assert suggestions.update_suggestion_status(sid, status, source="api") == first
+    with pytest.raises(replies.SuggestionConflict):
+        suggestions.update_suggestion_status(sid, other, source="api")
+    with store() as conn:
+        assert conn.execute("SELECT count(*) FROM suggestion_reactions").fetchone()[0] == 1
+
+
+def test_legacy_http_paths_protect_answers_and_honor_revision(store, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import auth
+    from app.main import app
+
+    monkeypatch.setattr(auth, "password_hash", lambda: "configured")
+    monkeypatch.setattr(auth.storage, "valid_session", lambda *_: True)
+    sid = card("question", allow_free_text=True)
+    with TestClient(app, headers={"Origin": "http://testserver"}) as client:
+        assert client.patch(f"/suggestions/{sid}", json={"status": "deferred", "expected_revision": 1}).status_code == 200
+        assert client.patch(f"/suggestions/{sid}", json={"status": "dismissed", "expected_revision": 1}).status_code == 409
+        assert client.post(f"/suggestions/{sid}/answer", json={
+            "answer": "text", "text": "Zwei Tage", "expected_revision": 2,
+        }).status_code == 200
+        # Compatibility payloads omit revisions but cannot overwrite an answer.
+        assert client.patch(f"/suggestions/{sid}", json={"status": "dismissed"}).status_code == 409
+        assert client.post(f"/ui/suggestions/{sid}", data={"action": "dismissed"}).status_code == 409
+        assert client.patch(f"/suggestions/{sid}", json={"status": "dismissed", "expected_revision": 0}).status_code == 422
+    assert suggestions.list_suggestions()[0]["status"] == "confirmed"
+
+
+def test_answer_racing_with_legacy_dismissal_keeps_one_decision(store):
+    sid = card("question", response_options=["Zwei Tage"])
+    def write(action):
+        try:
+            if action == "answer":
+                answer(sid, "option:0")
+            else:
+                suggestions.update_suggestion_status(sid, "dismissed", source="api")
+            return action
+        except replies.SuggestionConflict:
+            return "conflict"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(write, ["answer", "dismiss"]))
+    assert results.count("conflict") == 1
+    with store() as conn:
+        response_count = conn.execute("SELECT count(*) FROM suggestion_responses").fetchone()[0]
+        reaction_count = conn.execute("SELECT count(*) FROM suggestion_reactions").fetchone()[0]
+        assert response_count + reaction_count == 1
+        status = conn.execute("SELECT status FROM suggestions WHERE id = %s", (sid,)).fetchone()[0]
+        assert status == ("confirmed" if response_count else "dismissed")
