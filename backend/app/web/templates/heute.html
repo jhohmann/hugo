@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Heute – Hugo{% endblock %}
 {% block content %}
-<div class="today-page">
+<div class="overview-page today-page">
 <div class="page-head today-head">
   <div><h1>Heute</h1><p class="page-subtitle">{{ today_weekday }}, {{ today|de_date }}</p></div>
   <form class="today-evaluation" method="post" action="/ui/evaluate" data-loading-text="Auswertung läuft …">

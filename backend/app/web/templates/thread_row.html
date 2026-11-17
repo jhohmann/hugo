@@ -1,45 +1,48 @@
-<article class="card thread-row">
-  <div class="thread-row-main">
-    <a class="thread-title" href="/ui/threads/{{ t.id }}"><span class="thread-code">V-{{ t.id }}</span> {{ t.title }}</a>
+<article class="card thread-card" aria-labelledby="thread-title-{{ t.id }}">
+  <header class="thread-card-heading">
+    <div class="thread-card-title">
+      <span class="thread-code">V-{{ t.id }}</span>
+      <h3 id="thread-title-{{ t.id }}">{{ t.title }}</h3>
+    </div>
+    <a class="overview-link" href="/ui/threads/{{ t.id }}" aria-label="Vorhaben öffnen: {{ t.title }}">Vorhaben öffnen <span aria-hidden="true">→</span></a>
+  </header>
+  <div class="thread-card-body">
+    <div class="thread-card-badges">
+      <span class="status status-{{ t.status }}">{{ fmt.thread_status_label(t.status) }}</span>
+      {% if t.paused %}<span class="status">Pausiert</span>{% endif %}
+      {% for tag in t.tags|default([]) %}
+      <span class="status">{{ fmt.THREAD_TAG_LABELS[tag] }}</span>
+      {% endfor %}
+      {% if t.priority %}<span class="priority prio-{{ t.priority }}" title="Priorität {{ t.priority }} von 5">P{{ t.priority }}</span>{% endif %}
+    </div>
     {% if t.next_action %}
-    <p class="next-action">Nächster Schritt: {{ t.next_action }}</p>
-    {% endif %}
-  </div>
-  <div class="thread-row-meta">
-    {% if t.review_on %}
-    <span class="date-hint {{ fmt.urgency_class(t.review_on) }}">Wiedervorlage {{ t.review_on|de_date }}</span>
-    {% endif %}
-    {% if t.waiting_for %}
-    <span class="date-hint">Wartet auf: {{ t.waiting_for }}</span>
-    {% endif %}
-    {% for tag in t.tags|default([]) %}
-    <span class="status">{{ fmt.THREAD_TAG_LABELS[tag] }}</span>
-    {% endfor %}
-    <span class="status status-{{ t.status }}">{{ fmt.thread_status_label(t.status) }}</span>
-    {% if t.priority %}
-    <span class="priority prio-{{ t.priority }}" title="Priorität {{ t.priority }} von 5">P{{ t.priority }}</span>
+    <div class="thread-next-action"><span class="thread-field-label">Nächster Schritt</span><p>{{ t.next_action }}</p></div>
     {% endif %}
     {% set event_text = fmt.event_range_text(t) %}
-    {% if event_text %}
-    <span class="date-hint {{ fmt.urgency_class(t.event_start) }}" title="Ereigniszeitraum">{{ event_text }}</span>
+    {% if event_text or t.deadline or t.act_by or t.review_on or t.preparation_weeks %}
+    <dl class="thread-dates">
+      {% if event_text %}
+      <div><dt>Ereigniszeitraum</dt><dd class="date-hint {{ fmt.urgency_class(t.event_start) }}">{{ event_text }}</dd></div>
+      {% endif %}
+      {% if t.deadline %}
+      <div><dt>Feste Deadline</dt><dd class="date-hint {{ fmt.urgency_class(t.deadline) }}">{{ t.deadline|de_date }} <span>({{ fmt.relative_label(t.deadline) }})</span></dd></div>
+      {% endif %}
+      {% if t.act_by %}
+      <div><dt>Handeln bis · Empfehlung</dt><dd class="date-hint {{ fmt.urgency_class(t.act_by) }}">{{ t.act_by|de_date }} <span>({{ fmt.relative_label(t.act_by) }})</span></dd></div>
+      {% endif %}
+      {% if t.review_on %}
+      <div><dt>Wiedervorlage</dt><dd class="date-hint {{ fmt.urgency_class(t.review_on) }}">{{ t.review_on|de_date }} <span>({{ fmt.relative_label(t.review_on) }})</span></dd></div>
+      {% endif %}
+      {% if t.preparation_weeks %}
+      <div><dt>Vorbereitungszeit</dt><dd class="date-hint">{{ t.preparation_weeks }} {{ 'Woche' if t.preparation_weeks == 1 else 'Wochen' }}</dd></div>
+      {% endif %}
+    </dl>
     {% endif %}
-    {% if t.act_by %}
-    <span class="date-hint {{ fmt.urgency_class(t.act_by) }}" title="Hugos Handlungsempfehlung">
-      handeln bis {{ t.act_by|de_date }} ({{ fmt.relative_label(t.act_by) }})
-    </span>
-    {% endif %}
-    {% if t.deadline %}
-    <span class="date-hint {{ fmt.urgency_class(t.deadline) }}" title="Feste Deadline">
-      Deadline {{ t.deadline|de_date }} ({{ fmt.relative_label(t.deadline) }})
-    </span>
-    {% endif %}
-    {% if t.blocked_reason %}
-    <span class="status status-waiting" title="Blockiert">{{ t.blocked_reason }}</span>
-    {% endif %}
-    {% if t.preparation_weeks %}
-    <span class="date-hint" title="Vorbereitungszeit">
-      {{ t.preparation_weeks }}W Vorbereitung
-    </span>
+    {% if t.waiting_for or t.blocked_reason %}
+    <dl class="thread-constraints">
+      {% if t.waiting_for %}<div><dt>Wartet auf</dt><dd>{{ t.waiting_for }}</dd></div>{% endif %}
+      {% if t.blocked_reason %}<div><dt>Blockiert</dt><dd>{{ t.blocked_reason }}</dd></div>{% endif %}
+    </dl>
     {% endif %}
   </div>
 </article>

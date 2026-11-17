@@ -242,6 +242,12 @@ Zustellung. Es gibt weiterhin kein festes Tagesbudget und keinen Push-Kanal.
 - Ein Vorhaben kann beiden Bereichen oder keinem zugeordnet sein. **Alle Bereiche** zeigt auch unzugeordnete Vorhaben.
 - Gruppierung nach Aktiv, Wartet und Idee; Erledigt und Archiviert sind einklappbar.
 - Übersicht über nächsten Schritt, Priorität, Ereigniszeitraum und Fristen.
+- Die Übersicht folgt der Heute-Gestaltung: Klartext-Titel mit V-Kennung und
+  separatem **Vorhaben öffnen**-Link, gemeinsame Hell-/Dunkelfarben und Abstände.
+  Zeitangaben stehen beschriftet neben- bzw. auf kleinen Bildschirmen untereinander;
+  Handlungsempfehlungen bleiben von festen Deadlines unterscheidbar. Wartekontext
+  und Blockaden haben einen eigenen Bereich. Der Bereichsfilter lässt sich direkt
+  zurücksetzen; Erledigt und Archiviert bleiben ohne reduzierte Deckkraft lesbar.
 - Detailansicht mit Beschreibung, ursprünglicher Zeitangabe und zugehörigen Vorschlägen.
 - Sichtbare Kennung **V-ID** in Liste und Detailkopf; **Mit Hugo besprechen** öffnet
   einen neuen Chat mit vorausgefüllter Referenz.
@@ -1542,6 +1548,10 @@ Die meisten JSON-Listen begrenzen `limit` auf 1–500. Für vollständige Datens
 
 Die Heute-Ansicht wurde mit Klartext-Überschriften, separaten Vorhabenlinks,
 angepassten Hell-/Dunkelkontrasten und neu angeordneten Kartenaktionen überarbeitet.
+Die Vorhabenübersicht verwendet anschließend dieselben Gestaltungsregeln und
+gemeinsame CSS-Regeln für Überschriften, Links, Zähler, Fokus und Kartenköpfe.
+Auch für diese Anpassung wurden auf Nutzerwunsch keine Tests oder Browserprüfungen
+ausgeführt; die visuelle Abnahme in der laufenden Oberfläche bleibt offen.
 Die persönlichen Planungsregeln und die Kalenderauswahl sind wie im Abschnitt
 [Kalender](#kalender) beschrieben implementiert. Auf ausdrücklichen Nutzerwunsch
 wurden dafür keine Tests ausgeführt; vorhandene Migrations- und Einstellungsprüfungen

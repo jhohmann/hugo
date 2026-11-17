@@ -1,40 +1,53 @@
 {% extends "base.html" %}
 {% block title %}Vorhaben – Hugo{% endblock %}
 {% block content %}
-<div class="page-head">
-  <h1>Vorhaben</h1>
-  <a href="/ui/zeitleiste">Zeitleiste (Vorschau)</a>
-  <p class="muted">Änderungen besprichst du am besten im <a href="/ui/chat">Chat</a> mit Hugo.</p>
+<div class="overview-page threads-page">
+<div class="page-head overview-head">
+  <div><h1>Vorhaben</h1><p class="page-subtitle">Deine Pläne, nächsten Schritte und Fristen.</p></div>
+  <a class="button" href="/ui/zeitleiste">Zeitleiste (Vorschau)</a>
 </div>
 
-<form method="get" action="/ui/threads" class="actions">
-  <label for="thread-tag">Bereich</label>
-  <select id="thread-tag" name="tag">
-    <option value="">Alle Bereiche</option>
-    {% for value, label in fmt.THREAD_TAG_LABELS.items() %}
-    <option value="{{ value }}"{% if selected_tag == value %} selected{% endif %}>{{ label }}</option>
-    {% endfor %}
-  </select>
+<div class="card thread-toolbar">
+<form method="get" action="/ui/threads" class="thread-filter">
+  <div class="thread-filter-field">
+    <label for="thread-tag">Bereich</label>
+    <select id="thread-tag" name="tag">
+      <option value="">Alle Bereiche</option>
+      {% for value, label in fmt.THREAD_TAG_LABELS.items() %}
+      <option value="{{ value }}"{% if selected_tag == value %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
   <button type="submit" class="button">Filtern</button>
+  {% if selected_tag %}<a class="overview-link" href="/ui/threads">Filter zurücksetzen</a>{% endif %}
 </form>
+<p class="thread-toolbar-hint">Änderungen besprichst du im <a href="/ui/chat">Chat mit Hugo</a>.</p>
+</div>
 
 {% for status, items in groups %}
 {% if status in ("completed", "archived") %}
-<details class="thread-group">
-  <summary>{{ fmt.thread_status_label(status) }} ({{ items|length }})</summary>
+<details class="thread-group thread-group-closed">
+  <summary><h2>{{ fmt.thread_status_label(status) }} <span class="overview-count">{{ items|length }}</span></h2></summary>
   {% for t in items %}
   {% include "thread_row.html" %}
   {% endfor %}
 </details>
 {% else %}
-<section class="thread-group" aria-label="{{ fmt.thread_status_label(status) }}">
-  <h2>{{ fmt.thread_status_label(status) }} <span class="muted">({{ items|length }})</span></h2>
+<section class="thread-group" aria-labelledby="threads-{{ status }}">
+  <div class="overview-section-heading">
+    <h2 id="threads-{{ status }}">{{ fmt.thread_status_label(status) }}</h2>
+    <span class="overview-count">{{ items|length }}</span>
+  </div>
   {% for t in items %}
   {% include "thread_row.html" %}
   {% endfor %}
 </section>
 {% endif %}
 {% else %}
-<p class="empty-state card">{% if selected_tag %}Keine Vorhaben in diesem Bereich.{% else %}Noch keine Vorhaben. Sprich mit Hugo im Chat über deine Pläne.{% endif %}</p>
+<div class="empty-state card overview-empty">
+  <h3>{% if selected_tag %}Keine Vorhaben in diesem Bereich{% else %}Noch keine Vorhaben{% endif %}</h3>
+  <p>{% if selected_tag %}Wähle einen anderen Bereich oder <a href="/ui/threads">zeige alle Vorhaben</a>.{% else %}Sprich mit Hugo im <a href="/ui/chat">Chat über deine Pläne</a>.{% endif %}</p>
+</div>
 {% endfor %}
+</div>
 {% endblock %}
